@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能工地数字孪生沙盘 | AI风险预警</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    #info, #alert-dashboard {
+      position: absolute;
+      top: 10px;
+      padding: 8px 15px;
+      background: rgba(0, 0, 0, .8);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 100;
+      box-sizing: border-box;
+    }
+    #info { left: 10px; }
+    
+    /* 实时预警面板样式 */
+    #alert-dashboard {
+      right: 10px;
+      width: 250px;
+      max-height: 80vh; /* 限制高度，可滚动 */
+      overflow-y: auto;
+      border-left: 3px solid #ff0000; /* 红色边框强调预警 */
+      box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+      line-height: 1.5;
+    }
+    .alert-item {
+        margin-bottom: 8px;
+        padding: 6px 0;
+        border-bottom: 1px dashed #444;
+        cursor: pointer; /* 提示可交互 */
+    }
+    .alert-item:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    .alert-time { font-size: 10px; color: #aaa; margin-right: 5px; }
+    .alert-type { font-weight: bold; }
+    /* 滚动条美化 */
+    #alert-dashboard::-webkit-scrollbar { width: 6px; }
+    #alert-dashboard::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="info">智能工地数字孪生沙盘 | AI风险预警系统</div>
+  <div id="alert-dashboard">
+    <div style="font-weight: bold; margin-bottom: 10px; color: #ff0000;">AI实时预警面板</div>
+    </div>
+  <canvas id="c"></canvas>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

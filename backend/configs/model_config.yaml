@@ -1,0 +1,29 @@
+# 智慧工地安全检测模型配置文件
+
+# 模型权重路径（训练后生成，缺失时后端进入模拟模式）
+model_paths:
+  detector: "models/safety_detect.pt"   # YOLOv8 安全检测模型
+  pose: "models/yolov8n-pose.pt"        # YOLOv8-Pose 跌倒检测模型
+
+# 类别定义（与训练标签一致）
+classes:
+  0: "helmet"        # 安全帽
+  1: "no_helmet"     # 未戴安全帽
+  2: "vest"          # 反光背心
+  3: "no_vest"       # 未穿反光背心
+  4: "smoke"         # 吸烟
+  5: "fire"          # 火灾
+  6: "person"        # 人员
+
+# 推理参数
+inference:
+  conf_threshold: 0.4     # 置信度阈值
+  iou_threshold: 0.5      # NMS IOU 阈值
+  device: "cpu"           # 推理设备 cpu/cuda
+  imgsz: 640              # 推理图像尺寸
+
+# 跌倒检测参数
+fall_detection:
+  min_angle: 45.0         # 躯干与水平面夹角阈值（度），低于此值视为跌倒姿态
+  min_aspect_ratio: 1.2   # 边界框宽高比阈值，大于此值视为跌倒姿态
+  confirm_frames: 15      # 确认跌倒所需持续帧数（约1秒）

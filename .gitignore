@@ -1,3 +1,47 @@
-# 智慧工地前端
+# 智慧工地前端 — Git 忽略规则
 
-# Ignore nothing for this simple web project
+# 模型权重文件（过大，另行下载）
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# 数据集（全部忽略，仅保留 yaml 配置）
+data/*/
+!data/**/dataset.yaml
+data/SHWD.zip
+data/fire_smoke_raw.tar
+data/*.cache
+data/videos/
+
+# 训练产物
+runs/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Node 依赖
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# TRAE 辅助开发文件（本地使用，不提交）
+.trae/
+
+# 临时文件
+*.tmp
+*.log
+*.bak

@@ -44,15 +44,65 @@
     /* 滚动条美化 */
     #alert-dashboard::-webkit-scrollbar { width: 6px; }
     #alert-dashboard::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
-  </style>
+
+    /* 统计看板样式 */
+    #stats-panel {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      width: 250px;
+      padding: 10px 15px;
+      background: rgba(0, 0, 0, .8);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 100;
+      line-height: 1.8;
+      box-sizing: border-box;
+    }
+    #stats-panel .stats-title { font-weight: bold; margin-bottom: 5px; color: #00aaff; }
+    #stats-panel span { color: #ff4444; font-weight: bold; }
+
+    /* 视频流画中画样式 */
+    #video-panel {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      width: 320px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 8px;
+      padding: 8px;
+      z-index: 100;
+      box-sizing: border-box;
+    }
+    #video-panel .video-title { color: #fff; font-size: 12px; margin-bottom: 4px; font-weight: bold; }
+    #cam-feed { width: 100%; border-radius: 4px; min-height: 120px; background: #222; display: block; }
+    #cam-label { color: #aaa; font-size: 11px; margin-top: 4px; }
+  </style>
 </head>
 <body>
-  <div id="info">智能工地数字孪生沙盘 | AI风险预警系统</div>
+  <div id="info">智能工地数字孪生沙盘 | AI风险预警系统</div>
   <div id="alert-dashboard">
     <div style="font-weight: bold; margin-bottom: 10px; color: #ff0000;">AI实时预警面板</div>
     </div>
-  <canvas id="c"></canvas>
+  <canvas id="c"></canvas>
 
-  <script type="module" src="./main.js"></script>
+  <!-- 视频流画中画 -->
+  <div id="video-panel">
+    <div class="video-title">摄像头实时画面</div>
+    <img id="cam-feed" src="" alt="等待视频流..." />
+    <div id="cam-label">未连接</div>
+  </div>
+
+  <!-- 统计看板 -->
+  <div id="stats-panel">
+    <div class="stats-title">今日预警统计</div>
+    <div>总计: <span id="total-count">0</span></div>
+    <div>安全帽: <span id="helmet-count">0</span> | 反光衣: <span id="vest-count">0</span></div>
+    <div>吸烟: <span id="smoke-count">0</span> | 入侵: <span id="intrusion-count">0</span></div>
+    <div>跌倒: <span id="fall-count">0</span></div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
 </body>
 </html>

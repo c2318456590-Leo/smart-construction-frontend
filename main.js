@@ -3,7 +3,59 @@ import { OrbitControls } from './libs/OrbitControls.js';
 
 // --- 获取 UI 元素 ---
 const alertDashboard = document.querySelector('#alert-dashboard');
-let trackedWorker; 
+
+// --- 统计计数器 ---
+const stats = {
+    total: 0, no_helmet: 0, no_vest: 0, smoke: 0, intrusion: 0, fall: 0
+};
+
+// --- 多工人管理器 ---
+const workerManager = {
+    workers: new Map(),  // id -> THREE.Mesh
+
+    update(workersData) {
+        const activeIds = new Set();
+        workersData.forEach(w => {
+            activeIds.add(w.id);
+            if (!this.workers.has(w.id)) {
+                // 创建新工人模型
+                const mesh = new THREE.Mesh(
+                    new THREE.CapsuleGeometry(0.5, 1.5, 8, 16),
+                    new THREE.MeshStandardMaterial({ color: 0x00cc00, metalness: 0.5 })
+                );
+                mesh.position.set(w.x, 2.0, w.z);
+                mesh.castShadow = true;
+                mesh.name = `Worker_${w.id}`;
+                scene.add(mesh);
+                this.workers.set(w.id, mesh);
+            }
+            // 更新位置
+            const mesh = this.workers.get(w.id);
+            mesh.position.x = w.x;
+            mesh.position.z = w.z;
+            // 安全帽状态颜色：无安全帽变红
+            mesh.material.color.setHex(w.helmet === false ? 0xff0000 : 0x00cc00);
+        });
+        // 移除离场工人
+        for (const [id, mesh] of this.workers) {
+            if (!activeIds.has(id)) {
+                scene.remove(mesh);
+                this.workers.delete(id);
+            }
+        }
+    },
+
+    updateSingle(x, z) {
+        // 兼容旧协议：单工人轨迹
+        this.update([{ id: 'default', x, z, helmet: true }]);
+        // 闪烁反馈
+        const mesh = this.workers.get('default');
+        if (mesh) {
+            mesh.material.color.setHex(0x33ff33);
+            setTimeout(() => mesh.material.color.setHex(0x00cc00), 100);
+        }
+    }
+};
 
 // --- 初始化 渲染器 和 画布 ---
 const canvas = document.querySelector('#c');
@@ -162,20 +214,21 @@ camFOV2.rotation.y = -Math.PI * 0.75;
 scene.add(camFOV2);
 
 
-// ====== 动态模型：被追踪的工人 (仿真点) ======
-trackedWorker = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 1.5, 8, 16),
-    new THREE.MeshStandardMaterial({ color: 0x00cc00, metalness: 0.5 })
-);
-trackedWorker.position.set(0, 1.5 + 0.5, 0); 
-trackedWorker.name = 'TrackedWorker';
-trackedWorker.castShadow = true;
-scene.add(trackedWorker);
+// ====== 动态模型：被追踪的工人（由 workerManager 动态管理） ======
+// 初始默认工人，保证场景不为空
+workerManager.update([{ id: 'default', x: 0, z: 0, helmet: true }]);
 
 
 // ====== 危险事件标记函数（与 UI 联动，不变） ======
 function addDangerPoint(x, y, z, type = "danger") {
-    const colors = { no_helmet: 0xff0000, smoke: 0xff8800, intrusion: 0x00ffff, danger: 0xff0000 };
+    const colors = {
+        no_helmet: 0xff0000,   // 红色 - 未戴安全帽
+        no_vest: 0xff00ff,     // 品红 - 未穿反光衣
+        smoke: 0xff8800,       // 橙色 - 吸烟/明火
+        intrusion: 0x00ffff,   // 青色 - 区域入侵
+        fall: 0xffff00,        // 黄色 - 跌倒
+        danger: 0xff0000       // 红色 - 通用危险
+    };
 
     const sphere = new THREE.Mesh(
         new THREE.SphereGeometry(0.5, 16, 16), 
@@ -190,14 +243,35 @@ function addDangerPoint(x, y, z, type = "danger") {
     // --- UI 联动逻辑 ---
     const now = new Date();
     const timeStr = now.toTimeString().split(' ')[0];
-    const alertText = { no_helmet: '未戴安全帽', smoke: '吸烟/烟火', intrusion: '区域入侵', danger: '危险行为' }[type] || '未知风险';
+    const alertText = {
+        no_helmet: '未戴安全帽',
+        no_vest: '未穿反光衣',
+        smoke: '吸烟/明火',
+        intrusion: '区域入侵',
+        fall: '人员跌倒',
+        danger: '危险行为'
+    }[type] || '未知风险';
 
     const newItem = document.createElement('div');
     newItem.className = 'alert-item';
     newItem.style.color = `#${(colors[type] || 0xff0000).toString(16).padStart(6, '0')}`;
     newItem.innerHTML = `<span class="alert-time">${timeStr}</span> <span class="alert-type">[${alertText}]</span> <br>位置: X${x.toFixed(1)}, Z${z.toFixed(1)}`;
     
+    // 点击预警条目 → 相机飞向3D对应位置
+    newItem.addEventListener('click', () => {
+        const targetPos = new THREE.Vector3(x, 6, z);
+        const offset = new THREE.Vector3(15, 20, 15);
+        camera.position.copy(targetPos).add(offset);
+        controls.target.copy(targetPos);
+        controls.update();
+    });
+
     alertDashboard.prepend(newItem);
+
+    // 更新统计看板
+    stats.total++;
+    if (stats[type] !== undefined) stats[type]++;
+    updateStatsPanel();
 
     if (alertDashboard.children.length > 20) {
         alertDashboard.lastChild.remove();
@@ -215,7 +289,19 @@ function addDangerPoint(x, y, z, type = "danger") {
 }
 
 
-// ====== WebSocket & 模拟数据（保持不变） ======
+// ====== 统计看板更新函数 ======
+function updateStatsPanel() {
+    const el = (id) => document.getElementById(id);
+    if (el('total-count')) el('total-count').textContent = stats.total;
+    if (el('helmet-count')) el('helmet-count').textContent = stats.no_helmet;
+    if (el('vest-count')) el('vest-count').textContent = stats.no_vest;
+    if (el('smoke-count')) el('smoke-count').textContent = stats.smoke;
+    if (el('intrusion-count')) el('intrusion-count').textContent = stats.intrusion;
+    if (el('fall-count')) el('fall-count').textContent = stats.fall;
+}
+
+
+// ====== WebSocket & 模拟数据 ======
 let ws = null;
 function connectWS() { 
     ws = new WebSocket("ws://localhost:8000/ws");
@@ -226,11 +312,21 @@ function connectWS() {
             if (data.type === 'event') {
                 addDangerPoint(data.x, 0.2, data.z, data.event); 
             } else if (data.type === 'track') {
-                if (trackedWorker) {
-                    trackedWorker.position.x = data.x;
-                    trackedWorker.position.z = data.z;
-                    trackedWorker.material.color.setHex(0x33ff33);
-                    setTimeout(() => trackedWorker.material.color.setHex(0x00cc00), 100);
+                // 兼容新旧协议
+                if (data.workers) {
+                    workerManager.update(data.workers);
+                } else if (data.x !== undefined) {
+                    workerManager.updateSingle(data.x, data.z);
+                }
+            } else if (data.type === 'video_frame') {
+                // 视频流画中画
+                const camFeed = document.getElementById('cam-feed');
+                if (camFeed) {
+                    camFeed.src = data.frame;
+                    const camLabel = document.getElementById('cam-label');
+                    if (camLabel && data.camera_id) {
+                        camLabel.textContent = `Cam ${data.camera_id}`;
+                    }
                 }
             }
         } catch (error) {
@@ -242,30 +338,23 @@ function connectWS() {
 connectWS();
 
 
-// 演示用：模拟工人位置追踪和事件
+// 演示用：模拟工人位置追踪和事件（后端未连接时生效）
 setInterval(() => {
     // 1. 模拟工人位置（平滑移动）
     const time = Date.now() * 0.0005;
     const trackX = Math.sin(time * 0.5) * 15;
     const trackZ = Math.cos(time * 0.7) * 15;
     
-    // 模拟接收到追踪数据 (如果 WebSocket 未连接，则直接在前端更新)
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({type: 'track', x: trackX, z: trackZ}));
-    } else {
-        if (trackedWorker) {
-            trackedWorker.position.x = trackX;
-            trackedWorker.position.z = trackZ;
-            trackedWorker.material.color.setHex(0x33ff33);
-            setTimeout(() => trackedWorker.material.color.setHex(0x00cc00), 100);
-        }
+    // 如果 WebSocket 未连接，则直接在前端更新
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        workerManager.updateSingle(trackX, trackZ);
     }
 
     // 2. 模拟随机事件
-    if (Math.random() < 0.5) { 
+    if (Math.random() < 0.3) { 
         const randomX = (Math.random() - 0.5) * 40;
         const randomZ = (Math.random() - 0.5) * 40; 
-        const events = ['no_helmet', 'smoke', 'intrusion'];
+        const events = ['no_helmet', 'no_vest', 'smoke', 'intrusion', 'fall'];
         const randomEvent = events[Math.floor(Math.random() * events.length)];
         addDangerPoint(randomX, 0.2, randomZ, randomEvent);
     }

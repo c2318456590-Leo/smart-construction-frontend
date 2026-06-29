@@ -33,46 +33,57 @@ class App {
     }
 
     async _init() {
-        // 1. 初始化 UI（先于场景，因为面板需要先创建）
-        this.ui = new UIManager();
-        this.ui.init();
-        this.charts = new ChartManager();
-        this.charts.init();
+        try {
+            // 1. 初始化 UI（先于场景，因为面板需要先创建）
+            this.ui = new UIManager();
+            this.ui.init();
+            this.charts = new ChartManager();
+            this.charts.init();
 
-        // 2. 初始化 3D 场景
-        this.sceneMgr = new SceneManager(this.canvas);
-        this.scene = this.sceneMgr.scene;
-        this.camera = this.sceneMgr.camera;
-        this.renderer = this.sceneMgr.renderer;
+            // 2. 初始化 3D 场景
+            this.sceneMgr = new SceneManager(this.canvas);
+            this.scene = this.sceneMgr.scene;
+            this.camera = this.sceneMgr.camera;
+            this.renderer = this.sceneMgr.renderer;
 
-        // 3. 构建工地场景
-        this._buildSite();
+            // 3. 构建工地场景
+            this._buildSite();
 
-        // 4. 初始化管理器
-        this.cameraMgr = new CameraManager(this.scene, this.camera, this.sceneMgr.controls);
-        this.cameraMgr.init();
+            // 4. 初始化管理器
+            this.cameraMgr = new CameraManager(this.scene, this.camera, this.sceneMgr.controls);
+            this.cameraMgr.init();
+            // 记录初始相机视角（用于再次点击摄像头时恢复）
+            this.cameraMgr.saveDefaultView();
 
-        this.workerMgr = new WorkerManager(this.scene);
-        this.alertMgr = new AlertManager(this.scene);
+            this.workerMgr = new WorkerManager(this.scene);
+            this.alertMgr = new AlertManager(this.scene);
 
-        // 5. 初始化 WebSocket
-        this.ws = new WSManager();
-        this._bindWS();
+            // 5. 初始化 WebSocket
+            this.ws = new WSManager();
+            this._bindWS();
 
-        // 6. 绑定 UI 事件
-        this._bindUI();
+            // 6. 绑定 UI 事件
+            this._bindUI();
 
-        // 7. 启动循环
-        this._startLoop();
+            // 7. 启动循环
+            this._startLoop();
 
-        // 8. 启动定时器
-        this._startTimers();
+            // 8. 启动定时器
+            this._startTimers();
 
-        console.log('[App] 数字孪生监控平台初始化完成');
-
-        // 移除加载提示
-        const loading = document.getElementById('loading');
-        if (loading) loading.remove();
+            console.log('[App] 数字孪生监控平台初始化完成');
+        } catch (err) {
+            console.error('[App] 初始化失败:', err);
+            // 在页面显示错误信息，方便排查
+            const errDiv = document.createElement('div');
+            errDiv.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a0a1a;color:#ff6688;padding:20px 30px;border:1px solid #ff3366;border-radius:8px;font-family:monospace;font-size:13px;max-width:80vw;white-space:pre-wrap;z-index:9999;';
+            errDiv.textContent = '初始化失败: ' + (err && err.message ? err.message : err);
+            document.body.appendChild(errDiv);
+        } finally {
+            // 无论成功失败都移除 loading
+            const loading = document.getElementById('loading');
+            if (loading) loading.remove();
+        }
     }
 
     /** 构建工地场景：地面、建筑、塔吊、危险区域、雷达、粒子 */
@@ -123,7 +134,10 @@ class App {
         // 报警事件
         this.ws.on('event', (data) => {
             const camId = data.camera_id || this.cameraMgr.currentId;
-            this.alertMgr.addAlert(data.x, data.z, data.event, camId);
+            // addAlert 带节流去重，返回 null 表示节流命中（已有同类报警在显示）
+            const alertObj = this.alertMgr.addAlert(data.x, data.z, data.event, camId);
+            if (alertObj === null) return; // 节流命中：跳过后续 UI 更新，避免事件列表刷屏
+
             this.cameraMgr.triggerAlert(camId, data.event);
 
             const cam = this.cameraMgr.cameras.get(camId);
@@ -171,9 +185,9 @@ class App {
     /** 绑定 UI 事件 */
     _bindUI() {
         this.ui.on('selectCamera', (camId) => {
-            // camId 为 null 表示用户取消选中：仅断开 WS，不重连
+            // camId 为 null 表示用户取消选中：恢复初始视角 + 断开 WS
             if (camId === null) {
-                this.cameraMgr.clearSelection();
+                this.cameraMgr.restoreView();  // 飞回默认视角
                 if (this.ws.connected) {
                     this.ws.disconnect();
                 }

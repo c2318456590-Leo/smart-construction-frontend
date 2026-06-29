@@ -17,17 +17,49 @@ export class AlertManager {
         this.scene = scene;
         this.alerts = [];      // 报警特效数组
         this._elapsed = 0;     // 累计时间（毫秒），由 update 同步
+        // 节流记录：key = `${type}_${cameraId}`，value = 上次创建时间(ms)
+        // 同类型同摄像头在 throttleMs 内不重复创建报警，避免拖尾
+        this._throttleMap = new Map();
+        this._throttleMs = 3000; // 同类报警 3 秒内去重
+        this._moveThreshold = 8; // 同类报警位移超过此距离才允许新建
         this._injectStyles();
     }
 
     /**
-     * 添加报警特效
+     * 添加报警特效（带节流去重，避免同类报警拖尾）
      * @param {number} x         世界坐标 X
      * @param {number} z         世界坐标 Z
      * @param {string} type      报警类型（no_helmet / no_vest / smoke / intrusion / fall / fire）
      * @param {string|null} cameraId 关联摄像头 id
      */
     addAlert(x, z, type, cameraId = null) {
+        // 节流去重：同类型同摄像头在 _throttleMs 内、位移小于 _moveThreshold 时不重复创建
+        const key = `${type}_${cameraId}`;
+        const last = this._throttleMap.get(key);
+        if (last) {
+            const dt = this._elapsed - last.time;
+            const dist = Math.hypot(x - last.x, z - last.z);
+            if (dt < this._throttleMs && dist < this._moveThreshold) {
+                // 节流命中：更新已有同类报警的位置（让警示标识跟随工人移动），但不新建
+                const existing = this.alerts.find(a => a.alive && a.type === type && a.cameraId === cameraId);
+                if (existing) {
+                    existing.group.position.x = x;
+                    existing.group.position.z = z;
+                    existing.x = x;
+                    existing.z = z;
+                    // 刷新创建时间，延长显示
+                    existing.createdAt = this._elapsed;
+                    existing.fade = 1;
+                    // 更新节流记录的位置
+                    last.x = x;
+                    last.z = z;
+                    last.time = this._elapsed;
+                }
+                return null;
+            }
+        }
+        // 记录本次报警的时间与位置
+        this._throttleMap.set(key, { time: this._elapsed, x, z });
         const color = (CONFIG.alert.colors && CONFIG.alert.colors[type] !== undefined)
             ? CONFIG.alert.colors[type]
             : 0xff3366;

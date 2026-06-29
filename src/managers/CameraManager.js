@@ -32,7 +32,20 @@ export class CameraManager {
         this._flyToPos = new THREE.Vector3();
         this._flyToTarget = new THREE.Vector3();
 
+        // 保存初始相机位置与目标（用于再次点击恢复视角）
+        this._defaultPos = new THREE.Vector3();
+        this._defaultTarget = new THREE.Vector3();
+
         this._injectStyles();
+    }
+
+    /**
+     * 记录初始相机位置与目标（在 init 或 App 启动后调用一次）
+     * 用于"再次点击已选中摄像头 → 恢复初始视角"
+     */
+    saveDefaultView() {
+        this._defaultPos.copy(this.camera.position);
+        this._defaultTarget.copy(this.controls.target);
     }
 
     /** 根据 CONFIG.cameras 创建所有 3D 摄像头模型并添加标签 */
@@ -86,11 +99,30 @@ export class CameraManager {
         });
     }
 
-    /** 切换当前摄像头，触发主相机飞行动画到新位置 */
+    /**
+     * 切换当前摄像头，触发主相机飞行动画到新位置
+     * 若 camId 已是当前选中摄像头，则恢复初始视角（toggle 行为）
+     */
     selectCamera(camId) {
         const entry = this._cameras.get(camId);
         if (!entry) return;
 
+        // 再次点击已选中摄像头 → 恢复初始视角
+        if (this._currentId === camId) {
+            this._currentId = null;
+            this._cameras.forEach((e) => {
+                if (e.label) e.label.classList.remove('active');
+                this._refreshFov(e);
+            });
+            // 飞回默认视角
+            this._flyToPos.copy(this._defaultPos);
+            this._flyToTarget.copy(this._defaultTarget);
+            this._flying = true;
+            this.controls.enabled = false; // 飞行期间禁用控制器，避免冲突
+            return;
+        }
+
+        // 切换到新摄像头
         this._currentId = camId;
 
         // 更新标签选中态与视锥高亮
@@ -109,6 +141,7 @@ export class CameraManager {
         this._flyToPos.set(pos.x + 18, pos.y + 12, pos.z + 22);
         this._flyToTarget.copy(look);
         this._flying = true;
+        this.controls.enabled = false; // 飞行期间禁用控制器，避免冲突
     }
 
     /** 取消摄像头选中：清除标签 active 态与当前 ID，不触发飞行 */
@@ -118,6 +151,22 @@ export class CameraManager {
             if (e.label) e.label.classList.remove('active');
             this._refreshFov(e);
         });
+    }
+
+    /**
+     * 恢复初始视角（带飞行动画）
+     * 用于 UI 层取消摄像头选中时，平滑飞回默认观察视角
+     */
+    restoreView() {
+        this._currentId = null;
+        this._cameras.forEach((e) => {
+            if (e.label) e.label.classList.remove('active');
+            this._refreshFov(e);
+        });
+        this._flyToPos.copy(this._defaultPos);
+        this._flyToTarget.copy(this._defaultTarget);
+        this._flying = true;
+        this.controls.enabled = false; // 飞行期间禁用控制器，避免冲突
     }
 
     /** 触发摄像头报警闪烁（持续 3 秒） */
@@ -177,6 +226,10 @@ export class CameraManager {
             this.controls.update();
             if (this.camera.position.distanceTo(this._flyToPos) < 0.5) {
                 this._flying = false;
+                // 飞行结束：重新启用控制器，并强制同步内部状态
+                // 避免飞行结束后视角被锁死或弹回旧位置
+                this.controls.enabled = true;
+                this.controls.update();
             }
         }
 
@@ -315,11 +368,12 @@ export class CameraManager {
         this._refreshFov(entry);
     }
 
-    /** 刷新视锥透明度（选中态高亮，非选中态恢复原始值） */
+    /** 刷新视锥透明度（选中态轻微高亮，非选中态恢复原始值） */
     _refreshFov(entry) {
         if (!entry.fovMesh || !entry.fovMesh.material || entry.alerting) return;
+        // 选中态从 0.25 降到 0.10，避免视角被视锥遮挡导致画面变暗
         entry.fovMesh.material.opacity = (entry.id === this._currentId)
-            ? 0.25
+            ? 0.10
             : (entry.orig.fovOpacity ?? 0.12);
     }
 

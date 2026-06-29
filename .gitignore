@@ -45,3 +45,9 @@ Thumbs.db
 *.tmp
 *.log
 *.bak
+
+# 文档资料（非代码资产，不提交）
+*.docx
+*.doc
+*.pdf
+

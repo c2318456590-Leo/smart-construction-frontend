@@ -190,7 +190,7 @@ export class CameraManager {
                 this._restoreCamera(entry);
                 return;
             }
-            const on = Math.floor(phase / 150) % 2 === 0; // 每 150ms 切换一次
+            const on = Math.floor(phase / 400) % 2 === 0; // 每 400ms 切换一次（原 150ms，降频减轻刺激）
             this._applyFlash(entry, on);
         });
     }
@@ -246,7 +246,7 @@ export class CameraManager {
         return div;
     }
 
-    /** 应用报警闪烁外观 */
+    /** 应用报警闪烁外观（强度降低 70%） */
     _applyFlash(entry, on) {
         const c = entry.alertColor;
 
@@ -257,7 +257,7 @@ export class CameraManager {
                 m.color.setHex(c);
                 if (m.emissive) {
                     m.emissive.setHex(c);
-                    m.emissiveIntensity = 1.5;
+                    m.emissiveIntensity = 0.45;   // 原 1.5 → 降低 70%
                 }
             } else {
                 m.color.setHex(0x000000);
@@ -268,12 +268,12 @@ export class CameraManager {
             }
         }
 
-        // 视锥闪烁（opacity 变化）
+        // 视锥闪烁（opacity 变化，降低 70%）
         if (entry.fovMesh && entry.fovMesh.material) {
             const m = entry.fovMesh.material;
             if (on) {
                 m.color.setHex(c);
-                m.opacity = 0.35;
+                m.opacity = 0.105;   // 原 0.35 → 降低 70%
             } else {
                 m.color.setHex(entry.orig.fovColor);
                 m.opacity = (entry.orig.fovOpacity ?? 0.12) * 0.5;

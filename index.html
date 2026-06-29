@@ -1,108 +1,133 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>智能工地数字孪生沙盘 | AI风险预警</title>
-  <link rel="icon" href="data:,">
-  <style>
-    body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    #info, #alert-dashboard {
-      position: absolute;
-      top: 10px;
-      padding: 8px 15px;
-      background: rgba(0, 0, 0, .8);
-      color: #fff;
-      border-radius: 8px;
-      font-size: 14px;
-      z-index: 100;
-      box-sizing: border-box;
-    }
-    #info { left: 10px; }
-    
-    /* 实时预警面板样式 */
-    #alert-dashboard {
-      right: 10px;
-      width: 250px;
-      max-height: 80vh; /* 限制高度，可滚动 */
-      overflow-y: auto;
-      border-left: 3px solid #ff0000; /* 红色边框强调预警 */
-      box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
-      line-height: 1.5;
-    }
-    .alert-item {
-        margin-bottom: 8px;
-        padding: 6px 0;
-        border-bottom: 1px dashed #444;
-        cursor: pointer; /* 提示可交互 */
-    }
-    .alert-item:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-    }
-    .alert-time { font-size: 10px; color: #aaa; margin-right: 5px; }
-    .alert-type { font-weight: bold; }
-    /* 滚动条美化 */
-    #alert-dashboard::-webkit-scrollbar { width: 6px; }
-    #alert-dashboard::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>智慧工地数字孪生监控平台 | AI风险预警</title>
+  <link rel="icon" href="data:,">
 
-    /* 统计看板样式 */
-    #stats-panel {
+  <!-- ES6 Import Map: three 核心用本地, addons 从 CDN -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./libs/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #0a0e27;
+      color: #e0eaff;
+    }
+
+    /* 3D 画布全屏 */
+    #c {
       position: absolute;
-      right: 10px;
-      bottom: 10px;
-      width: 250px;
-      padding: 10px 15px;
-      background: rgba(0, 0, 0, .8);
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      z-index: 1;
+    }
+
+    /* 摄像头标签样式 */
+    .cam-label {
+      position: absolute;
+      padding: 4px 10px;
+      background: rgba(10, 20, 50, 0.85);
+      border: 1px solid rgba(0, 200, 255, 0.4);
+      border-radius: 4px;
+      color: #00d4ff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      pointer-events: auto;
+      white-space: nowrap;
+      z-index: 50;
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+      transform: translate(-50%, -50%);
+    }
+    .cam-label:hover {
+      background: rgba(0, 200, 255, 0.2);
+      border-color: #00d4ff;
+      box-shadow: 0 0 12px rgba(0, 200, 255, 0.5);
+    }
+    .cam-label.active {
+      background: rgba(0, 200, 255, 0.3);
+      border-color: #00d4ff;
+      box-shadow: 0 0 16px rgba(0, 200, 255, 0.6);
+    }
+    .cam-label.alerting {
+      animation: camAlertBlink 0.4s ease-in-out infinite alternate;
+    }
+    @keyframes camAlertBlink {
+      from { background: rgba(255, 51, 102, 0.3); border-color: #ff3366; box-shadow: 0 0 12px rgba(255, 51, 102, 0.6); }
+      to   { background: rgba(10, 20, 50, 0.85);  border-color: #ff3366; }
+    }
+
+    /* 报警浮动标签 */
+    .alert-label {
+      position: absolute;
+      padding: 3px 8px;
+      background: rgba(255, 0, 51, 0.85);
+      border-radius: 3px;
       color: #fff;
-      border-radius: 8px;
-      font-size: 13px;
-      z-index: 100;
-      line-height: 1.8;
-      box-sizing: border-box;
+      font-size: 12px;
+      font-weight: 600;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 49;
+      transform: translate(-50%, -100%);
+      text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
     }
-    #stats-panel .stats-title { font-weight: bold; margin-bottom: 5px; color: #00aaff; }
-    #stats-panel span { color: #ff4444; font-weight: bold; }
 
-    /* 视频流画中画样式 */
-    #video-panel {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      width: 320px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 8px;
-      padding: 8px;
-      z-index: 100;
-      box-sizing: border-box;
+    /* 加载动画 */
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 999;
+      text-align: center;
     }
-    #video-panel .video-title { color: #fff; font-size: 12px; margin-bottom: 4px; font-weight: bold; }
-    #cam-feed { width: 100%; border-radius: 4px; min-height: 120px; background: #222; display: block; }
-    #cam-label { color: #aaa; font-size: 11px; margin-top: 4px; }
+    #loading .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(0, 200, 255, 0.2);
+      border-top-color: #00d4ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p {
+      color: #00d4ff;
+      font-size: 14px;
+      letter-spacing: 2px;
+    }
   </style>
 </head>
 <body>
-  <div id="info">智能工地数字孪生沙盘 | AI风险预警系统</div>
-  <div id="alert-dashboard">
-    <div style="font-weight: bold; margin-bottom: 10px; color: #ff0000;">AI实时预警面板</div>
-    </div>
+  <!-- 加载提示 -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>系统初始化中...</p>
+  </div>
+
+  <!-- 3D 画布 -->
   <canvas id="c"></canvas>
 
-  <!-- 视频流画中画 -->
-  <div id="video-panel">
-    <div class="video-title">摄像头实时画面</div>
-    <img id="cam-feed" src="" alt="等待视频流..." />
-    <div id="cam-label">未连接</div>
-  </div>
-
-  <!-- 统计看板 -->
-  <div id="stats-panel">
-    <div class="stats-title">今日预警统计</div>
-    <div>总计: <span id="total-count">0</span></div>
-    <div>安全帽: <span id="helmet-count">0</span> | 反光衣: <span id="vest-count">0</span></div>
-    <div>吸烟: <span id="smoke-count">0</span> | 入侵: <span id="intrusion-count">0</span></div>
-    <div>跌倒: <span id="fall-count">0</span></div>
-  </div>
-
-  <script type="module" src="./main.js"></script>
+  <!-- 主入口模块 -->
+  <script type="module" src="./src/App.js"></script>
 </body>
 </html>

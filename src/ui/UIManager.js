@@ -444,6 +444,19 @@ export class UIManager {
         right.appendChild(aiItem);
         right.appendChild(fpsItem);
 
+        // 演示模式开关按钮（独立于其他状态项）
+        const demoItem = document.createElement('div');
+        demoItem.className = 'status-item';
+        const demoBtn = document.createElement('button');
+        demoBtn.id = 'demo-toggle';
+        demoBtn.textContent = '演示模式：关';
+        demoBtn.style.cssText = `background:rgba(74,158,216,0.1);border:1px solid ${CONFIG.colors.border};color:${CONFIG.colors.textSecondary};padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;transition:all 0.25s;`;
+        demoBtn.addEventListener('mouseenter', () => { demoBtn.style.borderColor = CONFIG.colors.accent; });
+        demoBtn.addEventListener('mouseleave', () => { if (!this._demoMode) demoBtn.style.borderColor = CONFIG.colors.border; });
+        demoBtn.addEventListener('click', () => this._toggleDemoMode());
+        demoItem.appendChild(demoBtn);
+        right.appendChild(demoItem);
+
         bar.appendChild(left);
         bar.appendChild(center);
         bar.appendChild(right);
@@ -457,6 +470,37 @@ export class UIManager {
         this.els.aiDot = aiDot;
         this.els.aiText = aiText;
         this.els.topFps = fpsVal;
+        this.els.demoBtn = demoBtn;
+        this._demoMode = false;   // 演示模式默认关闭
+    }
+
+    /**
+     * 切换演示模式：触发 'toggleDemo' 事件，由 App 处理模拟数据流启停
+     * @private
+     */
+    _toggleDemoMode() {
+        this._demoMode = !this._demoMode;
+        const btn = this.els.demoBtn;
+        if (this._demoMode) {
+            btn.textContent = '演示模式：开';
+            btn.style.background = `rgba(74,184,138,0.25)`;
+            btn.style.color = CONFIG.colors.success;
+            btn.style.borderColor = CONFIG.colors.success;
+        } else {
+            btn.textContent = '演示模式：关';
+            btn.style.background = 'rgba(74,158,216,0.1)';
+            btn.style.color = CONFIG.colors.textSecondary;
+            btn.style.borderColor = CONFIG.colors.border;
+        }
+        this._emit('toggleDemo', this._demoMode);
+    }
+
+    /**
+     * 查询当前演示模式状态
+     * @returns {boolean}
+     */
+    get demoMode() {
+        return this._demoMode;
     }
 
     // ==================== 左侧面板 ====================

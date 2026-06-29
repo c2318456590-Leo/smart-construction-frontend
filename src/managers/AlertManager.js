@@ -45,7 +45,7 @@ export class AlertManager {
             new THREE.MeshBasicMaterial({
                 color,
                 transparent: true,
-                opacity: 0.6,
+                opacity: 0.18,   // 原 0.6 → 降低 70%
                 side: THREE.DoubleSide,
                 depthWrite: false,
             })
@@ -62,7 +62,7 @@ export class AlertManager {
                 new THREE.MeshBasicMaterial({
                     color,
                     transparent: true,
-                    opacity: 0.8,
+                    opacity: 0.24,   // 原 0.8 → 降低 70%
                     side: THREE.DoubleSide,
                     depthWrite: false,
                 })
@@ -80,7 +80,7 @@ export class AlertManager {
             new THREE.MeshBasicMaterial({
                 color,
                 transparent: true,
-                opacity: 0.3,
+                opacity: 0.09,   // 原 0.3 → 降低 70%
                 side: THREE.DoubleSide,
                 depthWrite: false,
             })
@@ -138,17 +138,17 @@ export class AlertManager {
                 const offset = ring.userData.phaseOffset * pulseDur;
                 const t = ((elapsed + offset) % pulseDur) / pulseDur; // 0 ~ 1
                 const scale = 1 + 4 * t;          // 1 -> 5
-                const opacity = 0.8 * (1 - t);    // 0.8 -> 0
+                const opacity = 0.24 * (1 - t);   // 原 0.8 → 降低 70%
                 ring.scale.set(scale, scale, scale);
                 ring.material.opacity = opacity * a.fade;
             });
 
-            // 发光柱：opacity 呼吸闪烁
+            // 发光柱：opacity 呼吸闪烁（降低 70%）
             const breath = 0.5 + 0.5 * Math.sin(elapsed * 0.006);
-            a.glow.material.opacity = (0.35 + 0.35 * breath) * a.fade;
+            a.glow.material.opacity = (0.10 + 0.10 * breath) * a.fade;
 
-            // 地面光圈：轻微呼吸
-            a.ground.material.opacity = (0.22 + 0.12 * Math.sin(elapsed * 0.004)) * a.fade;
+            // 地面光圈：轻微呼吸（降低 70%）
+            a.ground.material.opacity = (0.066 + 0.036 * Math.sin(elapsed * 0.004)) * a.fade;
 
             // 超过 fadeOutDuration 后渐隐并移除
             if (age > CONFIG.alert.fadeOutDuration) {

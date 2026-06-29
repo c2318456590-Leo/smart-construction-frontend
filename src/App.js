@@ -164,8 +164,8 @@ class App {
             }
         });
 
-        // 连接
-        this.ws.connect(1);
+        // 连接（默认不自动连接，等用户选择摄像头或开启演示模式）
+        // this.ws.connect(1);  // 注释掉：无视频源时不应疯狂重连
     }
 
     /** 绑定 UI 事件 */
@@ -182,7 +182,16 @@ class App {
                 this.ui.updateAIStatus(false);
                 return;
             }
-            // 切换到新摄像头
+            // 切换到新摄像头：关闭演示模式（真实视频优先）
+            if (this.ui.demoMode) {
+                this._stopDemo();
+                this.ui._demoMode = false;
+                this.ui.els.demoBtn.textContent = '演示模式：关';
+                this.ui.els.demoBtn.style.background = 'rgba(74,158,216,0.1)';
+                this.ui.els.demoBtn.style.color = CONFIG.colors.textSecondary;
+                this.ui.els.demoBtn.style.borderColor = CONFIG.colors.border;
+            }
+            // 切换摄像头
             this.cameraMgr.selectCamera(camId);
             // 重新连接 WebSocket 获取新视频源
             if (this.ws.connected) {
@@ -192,6 +201,76 @@ class App {
                 this.ws.connect(camId);
             }
         });
+
+        // 演示模式切换
+        this.ui.on('toggleDemo', (on) => {
+            if (on) {
+                this._startDemo();
+            } else {
+                this._stopDemo();
+            }
+        });
+    }
+
+    /**
+     * 启动演示模式：断开 WS，用模拟信号驱动场景
+     * - 模拟工人移动（多工人）
+     * - 适度报警（每 6~10 秒一次，循环不断）
+     * - 模拟视频帧（占位画面）
+     */
+    _startDemo() {
+        // 若 WS 已连接，先断开（演示模式不连真实后端）
+        if (this.ws.connected) {
+            this.ws.disconnect();
+        }
+        this.ui.updateConnectionStatus(false);
+        this.ui.updateAIStatus(true);   // 演示模式下 AI 标记为运行
+        this.ui.updateVideoFrame('', '演示模式 · 模拟信号');
+
+        // 演示模式状态
+        this._demoActive = true;
+        this._demoWorkers = [
+            { id: 'DW001', phase: 0, helmet: true },
+            { id: 'DW002', phase: 1.5, helmet: true },
+            { id: 'DW003', phase: 3.2, helmet: false },
+        ];
+
+        // 模拟工人移动 + 报警（每 1.5 秒更新一次）
+        this._demoTimer = setInterval(() => {
+            if (!this._demoActive) return;
+            const t = Date.now() * 0.0005;
+            const workersData = this._demoWorkers.map((w) => {
+                const x = Math.sin(t + w.phase) * 45 + (w.phase * 5);
+                const z = Math.cos(t * 0.8 + w.phase) * 35;
+                return { id: w.id, x, z, helmet: w.helmet };
+            });
+            this.workerMgr.update(workersData);
+
+            // 每 4~6 次更新触发一次报警（约 6~9 秒一次）
+            this._demoTick = (this._demoTick || 0) + 1;
+            if (this._demoTick % 4 === 0) {
+                const w = workersData[Math.floor(Math.random() * workersData.length)];
+                // 无安全帽的工人触发 no_helmet，否则随机事件
+                const events = ['smoke', 'intrusion', 'fall'];
+                const evt = w.helmet === false ? 'no_helmet' : events[Math.floor(Math.random() * events.length)];
+                this.alertMgr.addAlert(w.x, w.z, evt, 1);
+                this.cameraMgr.triggerAlert(1, evt);
+                const time = new Date().toTimeString().split(' ')[0];
+                this.ui.addAlert(time, evt, '演示模式', null);
+                this._updateStats();
+            }
+        }, 1500);
+    }
+
+    /** 停止演示模式：清除定时器与状态 */
+    _stopDemo() {
+        this._demoActive = false;
+        if (this._demoTimer) {
+            clearInterval(this._demoTimer);
+            this._demoTimer = null;
+        }
+        this.ui.updateAIStatus(false);
+        this.ui.updateVideoFrame('', '未连接');
     }
 
     /** 更新统计数据 */
@@ -283,30 +362,6 @@ class App {
             this.charts.pushLatencyData(time, Math.round(latency));
             this.ui.updateLatency(Math.round(latency));
         }, CONFIG.charts.refreshInterval);
-
-        // 模拟数据（WebSocket 未连接时）
-        setInterval(() => {
-            if (this.ws && this.ws.connected) return;
-
-            // 模拟工人移动
-            const t = Date.now() * 0.0003;
-            const x = Math.sin(t * 0.5) * 50;
-            const z = Math.cos(t * 0.7) * 50;
-            this.workerMgr.updateSingle(x, z);
-
-            // 模拟随机报警
-            if (Math.random() < 0.2) {
-                const rx = (Math.random() - 0.5) * 100;
-                const rz = (Math.random() - 0.5) * 100;
-                const events = ['no_helmet', 'smoke', 'intrusion', 'fall'];
-                const evt = events[Math.floor(Math.random() * events.length)];
-                this.alertMgr.addAlert(rx, rz, evt, 1);
-                this.cameraMgr.triggerAlert(1, evt);
-                const time = new Date().toTimeString().split(' ')[0];
-                this.ui.addAlert(time, evt, '主监控', null);
-                this._updateStats();
-            }
-        }, 800);
 
         // 窗口缩放
         window.addEventListener('resize', () => {

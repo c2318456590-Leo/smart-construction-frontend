@@ -52,8 +52,8 @@ export class ChartManager {
     // ==================== ECharts 加载 ====================
 
     /**
-     * 动态加载 ECharts（CDN script 标签注入）
-     * 若 window.echarts 已存在则直接 resolve
+     * 动态加载 ECharts（多 CDN script 标签注入，带 fallback）
+     * 国内 CDN 优先，依次尝试直至成功；若 window.echarts 已存在则直接 resolve
      * @returns {Promise<void>}
      * @private
      */
@@ -64,14 +64,43 @@ export class ChartManager {
                 resolve();
                 return;
             }
-            const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js';
-            script.onload = () => resolve();
-            script.onerror = (err) => {
-                console.error('ChartManager: ECharts CDN 加载失败', err);
-                resolve();
+            // 多 CDN 源（国内优先，避免 jsdelivr 被墙导致图表无法初始化）
+            const cdns = [
+                'https://lib.baomitu.com/echarts/5.4.3/echarts.min.js',
+                'https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js',
+                'https://cdn.staticfile.org/echarts/5.4.3/echarts.min.js',
+                'https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js',
+                'https://unpkg.com/echarts@5.4.3/dist/echarts.min.js',
+            ];
+            let idx = 0;
+            const tryLoad = () => {
+                if (idx >= cdns.length) {
+                    console.error('ChartManager: 所有 ECharts CDN 加载失败，图表无法显示');
+                    resolve();
+                    return;
+                }
+                const url = cdns[idx];
+                const script = document.createElement('script');
+                script.src = url;
+                script.async = true;
+                script.onload = () => {
+                    if (window.echarts) {
+                        console.log('ChartManager: ECharts 加载成功', url);
+                        resolve();
+                    } else {
+                        // 脚本加载了但 echarts 未挂载，尝试下一个
+                        idx++;
+                        tryLoad();
+                    }
+                };
+                script.onerror = () => {
+                    console.warn('ChartManager: CDN 加载失败，尝试下一个:', url);
+                    idx++;
+                    tryLoad();
+                };
+                document.head.appendChild(script);
             };
-            document.head.appendChild(script);
+            tryLoad();
         });
     }
 

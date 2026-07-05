@@ -27,6 +27,12 @@ class App {
         this.canvas = document.getElementById('c');
         this.clock = new THREE.Clock();
         this.fps = { frames: 0, lastTime: 0, value: 60 };
+        this._timers = new Set();
+        this._animationFrame = null;
+        this._resizeHandler = null;
+        this._connectTimer = null;
+        this._destroyed = false;
+        this._dangerZones = CONFIG.dangerZones;
 
         // 延迟初始化，等待 DOM
         this._init();
@@ -38,7 +44,7 @@ class App {
             this.ui = new UIManager();
             this.ui.init();
             this.charts = new ChartManager();
-            this.charts.init();
+            await this.charts.init();
 
             // 2. 初始化 3D 场景
             this.sceneMgr = new SceneManager(this.canvas);
@@ -47,6 +53,7 @@ class App {
             this.renderer = this.sceneMgr.renderer;
 
             // 3. 构建工地场景
+            await this._loadDangerZones();
             this._buildSite();
 
             // 4. 初始化管理器
@@ -105,7 +112,7 @@ class App {
         });
 
         // 危险区域
-        CONFIG.dangerZones.forEach(cfg => {
+        this._dangerZones.forEach(cfg => {
             const z = createDangerZone(cfg);
             this.scene.add(z);
         });
@@ -199,18 +206,17 @@ class App {
             // 切换到新摄像头：关闭演示模式（真实视频优先）
             if (this.ui.demoMode) {
                 this._stopDemo();
-                this.ui._demoMode = false;
-                this.ui.els.demoBtn.textContent = '演示模式：关';
-                this.ui.els.demoBtn.style.background = 'rgba(74,158,216,0.1)';
-                this.ui.els.demoBtn.style.color = CONFIG.colors.textSecondary;
-                this.ui.els.demoBtn.style.borderColor = CONFIG.colors.border;
+                this.ui.setDemoMode(false, false);
             }
             // 切换摄像头
             this.cameraMgr.selectCamera(camId);
             // 重新连接 WebSocket 获取新视频源
             if (this.ws.connected) {
                 this.ws.disconnect();
-                setTimeout(() => this.ws.connect(camId), 500);
+                this._connectTimer = setTimeout(() => {
+                    this._connectTimer = null;
+                    if (!this._destroyed) this.ws.connect(camId);
+                }, 500);
             } else {
                 this.ws.connect(camId);
             }
@@ -233,6 +239,10 @@ class App {
      * - 模拟视频帧（占位画面）
      */
     _startDemo() {
+        if (this._demoTimer) {
+            clearInterval(this._demoTimer);
+            this._timers.delete(this._demoTimer);
+        }
         // 若 WS 已连接，先断开（演示模式不连真实后端）
         if (this.ws.connected) {
             this.ws.disconnect();
@@ -274,6 +284,7 @@ class App {
                 this._updateStats();
             }
         }, 1500);
+        this._timers.add(this._demoTimer);
     }
 
     /** 停止演示模式：清除定时器与状态 */
@@ -281,6 +292,7 @@ class App {
         this._demoActive = false;
         if (this._demoTimer) {
             clearInterval(this._demoTimer);
+            this._timers.delete(this._demoTimer);
             this._demoTimer = null;
         }
         this.ui.updateAIStatus(false);
@@ -296,7 +308,8 @@ class App {
     /** 主动画循环 */
     _startLoop() {
         const animate = () => {
-            requestAnimationFrame(animate);
+            if (this._destroyed) return;
+            this._animationFrame = requestAnimationFrame(animate);
             const delta = this.clock.getDelta();
             const elapsed = this.clock.getElapsedTime();
 
@@ -347,15 +360,10 @@ class App {
         }
     }
 
-    /** 定时器：时间更新、图表更新、模拟数据 */
+    /** 定时器：图表更新与窗口缩放 */
     _startTimers() {
-        // 每秒更新时间
-        setInterval(() => {
-            this.ui.updateTime();
-        }, 1000);
-
         // 图表数据更新
-        setInterval(() => {
+        const chartTimer = setInterval(() => {
             const stats = this.alertMgr.getStats();
             const time = new Date().toTimeString().split(' ')[0];
 
@@ -376,16 +384,81 @@ class App {
             this.charts.pushLatencyData(time, Math.round(latency));
             this.ui.updateLatency(Math.round(latency));
         }, CONFIG.charts.refreshInterval);
+        this._timers.add(chartTimer);
 
         // 窗口缩放
-        window.addEventListener('resize', () => {
+        this._resizeHandler = () => {
             this.sceneMgr.resize(window.innerWidth, window.innerHeight);
             this.charts.resize();
-        });
+        };
+        window.addEventListener('resize', this._resizeHandler);
+    }
+
+    async _loadDangerZones() {
+        try {
+            const resp = await fetch(`${CONFIG.api.base}${CONFIG.api.endpoints.zones}`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            const zones = Array.isArray(data.danger_zones) ? data.danger_zones : [];
+            if (zones.length > 0) {
+                this._dangerZones = zones.map((zone) => this._normalizeDangerZone(zone));
+            }
+        } catch (err) {
+            console.warn('[App] /api/zones 加载失败，使用前端 fallback 配置:', err);
+            this._dangerZones = CONFIG.dangerZones;
+        }
+    }
+
+    _normalizeDangerZone(zone) {
+        const fallback = CONFIG.dangerZones.find((item) => item.id === zone.id) || {};
+        const polygon = Array.isArray(zone.polygon) ? zone.polygon : fallback.polygon;
+        if (!Array.isArray(polygon) || polygon.length < 3) {
+            return { ...fallback, ...zone };
+        }
+        const xs = polygon.map((p) => p[0]);
+        const zs = polygon.map((p) => p[1]);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minZ = Math.min(...zs);
+        const maxZ = Math.max(...zs);
+        return {
+            ...fallback,
+            ...zone,
+            polygon,
+            x: minX,
+            z: minZ,
+            w: maxX - minX,
+            d: maxZ - minZ,
+            color: zone.color ?? fallback.color ?? 0xff3344,
+        };
+    }
+
+    destroy() {
+        this._destroyed = true;
+        if (this._animationFrame) {
+            cancelAnimationFrame(this._animationFrame);
+            this._animationFrame = null;
+        }
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler);
+            this._resizeHandler = null;
+        }
+        if (this._connectTimer) {
+            clearTimeout(this._connectTimer);
+            this._connectTimer = null;
+        }
+        this._timers.forEach((timer) => clearInterval(timer));
+        this._timers.clear();
+        this.ws?.disconnect();
+        this.workerMgr?.clear();
+        this.alertMgr?.clear();
+        this.cameraMgr?.destroy();
+        this.charts?.destroy();
+        this.ui?.destroy();
     }
 }
 
 // 启动应用
 window.addEventListener('DOMContentLoaded', () => {
-    new App();
+    window.smartSiteApp = new App();
 });

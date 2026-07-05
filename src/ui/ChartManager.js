@@ -424,6 +424,19 @@ export class ChartManager {
     }
 
     /**
+     * 销毁所有 ECharts 实例，供 App 生命周期清理调用。
+     */
+    destroy() {
+        Object.values(this.charts).forEach((chart) => {
+            if (chart && chart.instance) {
+                chart.instance.dispose();
+            }
+        });
+        this.charts = {};
+        this._ready = false;
+    }
+
+    /**
      * hex 颜色转 rgba 字符串
      * @param {string} hex 如 '#00d4ff'
      * @param {number} alpha 透明度 0-1

@@ -258,6 +258,28 @@ export class CameraManager {
         return this._currentId;
     }
 
+    /** 销毁摄像头模型和 HTML 标签，供 App 生命周期清理调用 */
+    destroy() {
+        this._cameras.forEach((entry) => {
+            if (entry.label && entry.label.parentNode) {
+                entry.label.parentNode.removeChild(entry.label);
+            }
+            if (entry.mesh) {
+                this.scene.remove(entry.mesh);
+                entry.mesh.traverse((obj) => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach((m) => m.dispose());
+                    }
+                });
+            }
+        });
+        this._cameras.clear();
+        this._flying = false;
+        this._currentId = null;
+    }
+
     // ===================== 内部方法 =====================
 
     /** 在摄像头模型中查找警示灯与视锥 */

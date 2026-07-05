@@ -74,11 +74,16 @@
 │   │   └── WSManager.js            # WebSocket 通信+自动重连
 │   │
 │   └── ui/
-│       ├── UIManager.js            # UI 面板（顶/左/右/底）+视频源导入
+│       ├── UIManager.js            # UI 编排与公共状态更新接口
+│       ├── components/             # TopBar / StatsPanel / VideoPanel / EventPanel / BottomPanel
+│       ├── uiApi.js                # 视频源 API 调用封装
 │       └── ChartManager.js         # ECharts 实时图表管理
 │
 ├── backend/                        # 后端 AI 推理服务
-│   ├── app.py                      # FastAPI 主服务（HTTP + WebSocket）
+│   ├── app.py                      # FastAPI 入口（路由注册 + 生命周期）
+│   ├── api/                        # HTTP 路由（health / zones / videos）
+│   ├── services/                   # 模型加载 / 检测流水线 / mock 流 / 帧编码
+│   ├── ws.py                       # WebSocket 推流端点
 │   ├── detector.py                 # YOLOv8 安全检测器（安全帽/明火烟雾）
 │   ├── pose_analyzer.py            # 跌倒检测（YOLOv8-Pose）
 │   ├── zone_monitor.py             # 危险区域入侵检测（shapely）
@@ -90,7 +95,7 @@
 │   │   └── zones.json              # 危险区域多边形定义
 │   └── *.py                        # 数据集转换/下载/测试脚本
 │
-└── main.js                         # 旧版前端（已被 src/ 架构替代，保留）
+└── archive/legacy/main.legacy.js   # 旧版前端归档，仅作历史参考
 ```
 
 ## 架构总览
@@ -181,7 +186,8 @@ cd backend
 pip install -r requirements.txt
 
 # （可选）放置训练好的模型到 backend/models/ 目录
-# helmet_detect.pt / fire_smoke_detect.pt / yolov8n-pose.pt
+# 默认读取 backend/configs/model_config.yaml:
+# model_paths.helmet / model_paths.fire_smoke / model_paths.pose
 
 python app.py
 # 或: uvicorn app:app --host 0.0.0.0 --port 8000
@@ -226,7 +232,7 @@ python -m http.server 8080
 | `render` | 渲染与后处理 | shadowMapSize=4096, bloom(strength=0.8) |
 | `buildings` | 建筑配置 | 2 栋楼（主楼A/B） |
 | `cranes` | 塔吊配置 | height=60, armLength=35 |
-| `dangerZones` | 危险区域 | 3 个（与后端 zones.json 对齐） |
+| `dangerZones` | 危险区域 fallback | 后端不可用时使用；权威来源为 `/api/zones` / `backend/configs/zones.json` |
 | `cameras` | 摄像头配置 | 4 个（主监控/堆场/塔吊/入口） |
 | `alert` | 报警特效 | pulseRings=3, fadeOutDuration=8000ms |
 | `ws` | WebSocket | url=ws://localhost:8000/ws, reconnectInterval=3000 |
@@ -236,7 +242,9 @@ python -m http.server 8080
 ### 后端配置（backend/configs/）
 
 **model_config.yaml**：
-- `model_paths`：3 个模型文件路径
+- `model_paths.helmet`：安全帽检测模型路径（默认 `models/helmet_detect.pt`）
+- `model_paths.fire_smoke`：明火/烟雾检测模型路径（默认 `models/fire_smoke_detect.pt`）
+- `model_paths.pose`：YOLOv8-Pose 跌倒检测模型路径（默认 `models/yolov8n-pose.pt`）
 - `inference`：conf_threshold=0.4, iou_threshold=0.5, device=cpu, imgsz=640
 - `fall_detection`：min_angle=45°, min_aspect_ratio=1.2, confirm_frames=15
 

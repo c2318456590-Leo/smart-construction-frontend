@@ -2,8 +2,9 @@
 
 # 模型权重路径（训练后生成，缺失时后端进入模拟模式）
 model_paths:
-  detector: "models/safety_detect.pt"   # YOLOv8 安全检测模型
-  pose: "models/yolov8n-pose.pt"        # YOLOv8-Pose 跌倒检测模型
+  helmet: "models/helmet_detect.pt"          # 安全帽检测模型
+  fire_smoke: "models/fire_smoke_detect.pt"  # 明火/烟雾检测模型
+  pose: "models/yolov8n-pose.pt"             # YOLOv8-Pose 跌倒检测模型
 
 # 类别定义（与训练标签一致）
 classes:

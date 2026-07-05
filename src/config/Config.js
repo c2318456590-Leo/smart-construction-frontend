@@ -89,11 +89,11 @@ export const CONFIG = {
         { pos: [-30, 0, -30], height: 60, armLength: 35, color: 0xff8800 },
     ],
 
-    // ====== 危险区域配置（与后端 zones.json 对齐） ======
+    // ====== 危险区域 fallback（权威来源为后端 /api/zones） ======
     dangerZones: [
-        { name: '塔吊作业区', id: 'tower_crane',     x: -50, z: -50, w: 40, d: 40, color: 0xff3344 },
-        { name: '临边防护区', id: 'building_edge',    x: 10,  z: -30, w: 50, d: 20, color: 0xffaa00 },
-        { name: '材料堆放区', id: 'material_storage', x: -40, z: 30,  w: 35, d: 30, color: 0xff8800 },
+        { name: '塔吊作业区', id: 'tower_crane',     x: -40, z: -40, w: 30, d: 30, color: 0xff3344, polygon: [[-40, -40], [-10, -40], [-10, -10], [-40, -10]] },
+        { name: '临边防护区', id: 'building_edge',    x: 10,  z: -20, w: 40, d: 15, color: 0xffaa00, polygon: [[10, -20], [50, -20], [50, -5], [10, -5]] },
+        { name: '材料堆放区', id: 'material_storage', x: -30, z: 40,  w: 25, d: 20, color: 0xff8800, polygon: [[-30, 40], [-5, 40], [-5, 60], [-30, 60]] },
     ],
 
     // ====== 摄像头配置（3D 场景中的位置 + 监控参数） ======

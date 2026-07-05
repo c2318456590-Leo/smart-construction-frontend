@@ -346,18 +346,36 @@ export function createCrane(config) {
 export function createDangerZone(zoneConfig) {
     const name = zoneConfig.name || 'DangerZone';
     const id = zoneConfig.id || 'zone';
-    const x = zoneConfig.x || 0;
-    const z = zoneConfig.z || 0;
-    const w = Math.max(0.01, zoneConfig.w || 20);
-    const d = Math.max(0.01, zoneConfig.d || 20);
+    const polygon = Array.isArray(zoneConfig.polygon) && zoneConfig.polygon.length >= 3
+        ? zoneConfig.polygon
+        : null;
+    const bounds = polygon
+        ? polygon.reduce((acc, p) => ({
+            minX: Math.min(acc.minX, p[0]),
+            maxX: Math.max(acc.maxX, p[0]),
+            minZ: Math.min(acc.minZ, p[1]),
+            maxZ: Math.max(acc.maxZ, p[1]),
+        }), { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
+        : null;
+    const x = bounds ? bounds.minX : (zoneConfig.x || 0);
+    const z = bounds ? bounds.minZ : (zoneConfig.z || 0);
+    const w = Math.max(0.01, bounds ? bounds.maxX - bounds.minX : (zoneConfig.w || 20));
+    const d = Math.max(0.01, bounds ? bounds.maxZ - bounds.minZ : (zoneConfig.d || 20));
     const color = zoneConfig.color != null ? zoneConfig.color : 0xff3344;
+    const centerX = x + w / 2;
+    const centerZ = z + d / 2;
 
     const group = new THREE.Group();
     group.name = `DangerZone_${id}_${name}`;
 
     // ===== 半透明地面标记（自发光）=====
+    const markerGeometry = polygon
+        ? new THREE.ShapeGeometry(new THREE.Shape(
+            polygon.map(([px, pz]) => new THREE.Vector2(px - centerX, -(pz - centerZ)))
+        ))
+        : new THREE.PlaneGeometry(w, d);
     const marker = new THREE.Mesh(
-        new THREE.PlaneGeometry(w, d),
+        markerGeometry,
         new THREE.MeshStandardMaterial({
             color: color,
             transparent: true,
@@ -374,13 +392,15 @@ export function createDangerZone(zoneConfig) {
     // ===== 边界发光线（矩形线框）=====
     const halfW = w / 2;
     const halfD = d / 2;
-    const borderPoints = [
-        new THREE.Vector3(-halfW, 0.1, -halfD),
-        new THREE.Vector3(halfW, 0.1, -halfD),
-        new THREE.Vector3(halfW, 0.1, halfD),
-        new THREE.Vector3(-halfW, 0.1, halfD),
-        new THREE.Vector3(-halfW, 0.1, -halfD),
-    ];
+    const borderPoints = polygon
+        ? polygon.concat([polygon[0]]).map(([px, pz]) => new THREE.Vector3(px - centerX, 0.1, pz - centerZ))
+        : [
+            new THREE.Vector3(-halfW, 0.1, -halfD),
+            new THREE.Vector3(halfW, 0.1, -halfD),
+            new THREE.Vector3(halfW, 0.1, halfD),
+            new THREE.Vector3(-halfW, 0.1, halfD),
+            new THREE.Vector3(-halfW, 0.1, -halfD),
+        ];
     const borderGeo = new THREE.BufferGeometry().setFromPoints(borderPoints);
     const border = new THREE.Line(borderGeo, new THREE.LineBasicMaterial({ color: color }));
     group.add(border);
@@ -409,7 +429,7 @@ export function createDangerZone(zoneConfig) {
     group.add(sign);
 
     // 整体位置：区域中心
-    group.position.set(x + w / 2, 0, z + d / 2);
+    group.position.set(centerX, 0, centerZ);
     return group;
 }
 

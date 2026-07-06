@@ -1,8 +1,12 @@
 /**
  * Config.js — 全局配置中心
- * 本次修改：收紧相机视角边界，补齐渐变天空配置，并移出入口监控位置。
- * 所有颜色、尺寸、动画、场景、WebSocket 参数集中管理
+ * 本次修改：合并最新探照灯配置到源文件，保留扩展夜间安全照明参数。
  */
+
+const NIGHT_SITE_SPOTLIGHT_SCALE = 1.0;
+const DAY_SITE_SPOTLIGHT_SCALE = 0.12;
+const NIGHT_SPOTLIGHT_BEAM_SCALE = 1.0;
+const DAY_SPOTLIGHT_BEAM_SCALE = 0.08;
 
 export const CONFIG = {
     // ====== 主题色系（深蓝科技风，低饱和柔和） ======
@@ -88,6 +92,8 @@ export const CONFIG = {
             exposure: 1.1,
             bloomStrength: 0.3,
             bloomThreshold: 0.6,
+            siteSpotlightScale: DAY_SITE_SPOTLIGHT_SCALE,
+            siteSpotlightBeamScale: DAY_SPOTLIGHT_BEAM_SCALE,
         },
         night: {
             bgColor: 0x0a0e27,
@@ -96,12 +102,14 @@ export const CONFIG = {
             fogColor: 0x0a0e27,
             fogNear: 150,
             fogFar: 500,
-            ambient: { color: 0x4466aa, intensity: 0.4 },
-            hemi: { sky: 0x88aaff, ground: 0x080820, intensity: 0.6 },
-            sun: { color: 0xfff5e0, intensity: 1.2, position: [100, 200, 80] },
-            exposure: 0.9,
-            bloomStrength: 0.5,
+            ambient: { color: 0x5d79b8, intensity: 0.58 },
+            hemi: { sky: 0xa7beff, ground: 0x10172e, intensity: 0.78 },
+            sun: { color: 0xfff2d0, intensity: 1.35, position: [100, 200, 80] },
+            exposure: 1.15,
+            bloomStrength: 0.58,
             bloomThreshold: 0.4,
+            siteSpotlightScale: NIGHT_SITE_SPOTLIGHT_SCALE,
+            siteSpotlightBeamScale: NIGHT_SPOTLIGHT_BEAM_SCALE,
         },
     },
 
@@ -136,6 +144,98 @@ export const CONFIG = {
         sun: 0xfff5e0,
         sunIntensity: 1.2,
         sunPosition: [100, 200, 80],
+        siteSpotlights: [
+            {
+                name: 'south-gate-light',
+                position: [-34, 32, 116],
+                target: [4, 2, 78],
+                color: 0xfff0c0,
+                intensity: 6.2,
+                distance: 175,
+                angle: 0.58,
+                penumbra: 0.68,
+                decay: 1.2,
+                beamRadius: 28,
+                beamOpacity: 0.16,
+                poolRadius: 34,
+                poolOpacity: 0.14,
+            },
+            {
+                name: 'crane-yard-light',
+                position: [-74, 42, -2],
+                target: [-28, 3, -34],
+                color: 0xdde8ff,
+                intensity: 5.4,
+                distance: 165,
+                angle: 0.6,
+                penumbra: 0.7,
+                decay: 1.25,
+                beamRadius: 26,
+                beamOpacity: 0.14,
+                poolRadius: 32,
+                poolOpacity: 0.12,
+            },
+            {
+                name: 'material-yard-light',
+                position: [-84, 34, 54],
+                target: [-22, 2, 48],
+                color: 0xffedc8,
+                intensity: 5.0,
+                distance: 160,
+                angle: 0.62,
+                penumbra: 0.72,
+                decay: 1.3,
+                beamRadius: 25,
+                beamOpacity: 0.13,
+                poolRadius: 30,
+                poolOpacity: 0.11,
+            },
+            {
+                name: 'building-front-light',
+                position: [82, 38, 34],
+                target: [24, 4, -8],
+                color: 0xe4eeff,
+                intensity: 4.8,
+                distance: 165,
+                angle: 0.58,
+                penumbra: 0.7,
+                decay: 1.25,
+                beamRadius: 26,
+                beamOpacity: 0.13,
+                poolRadius: 32,
+                poolOpacity: 0.12,
+            },
+            {
+                name: 'central-yard-light',
+                position: [4, 44, 92],
+                target: [10, 3, 8],
+                color: 0xfff4d0,
+                intensity: 5.8,
+                distance: 190,
+                angle: 0.64,
+                penumbra: 0.76,
+                decay: 1.18,
+                beamRadius: 30,
+                beamOpacity: 0.13,
+                poolRadius: 38,
+                poolOpacity: 0.12,
+            },
+            {
+                name: 'north-workface-light',
+                position: [72, 42, -82],
+                target: [8, 4, -34],
+                color: 0xe7f0ff,
+                intensity: 5.2,
+                distance: 175,
+                angle: 0.62,
+                penumbra: 0.74,
+                decay: 1.22,
+                beamRadius: 28,
+                beamOpacity: 0.12,
+                poolRadius: 34,
+                poolOpacity: 0.11,
+            },
+        ],
     },
 
     // ====== 工地建筑配置 ======
@@ -196,9 +296,9 @@ export const CONFIG = {
         },
         {
             id: 4, name: '入口监控',
-            pos: [0, 30, 118],
-            lookAt: [0, 5, 85],
-            fov: 75, far: 250,
+            pos: [-28, 26, 116],
+            lookAt: [10, 5, 84],
+            fov: 68, far: 230,
             color: 0xff44ff,
             region: '工地入口',
         },
@@ -246,7 +346,7 @@ export const CONFIG = {
 
     // ====== 粒子参数 ======
     particles: {
-        count: 200,
+        count: 0,
         size: 0.3,
         range: 200,
         color: 0x4488ff,

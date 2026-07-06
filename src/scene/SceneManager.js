@@ -1,8 +1,6 @@
 /**
  * SceneManager.js — 场景管理器
- * 本次修改：使用渐变天空纹理并统一钳制相机视角，避免低角度露出地面下方虚空。
- * 统一管理 renderer / scene / camera / controls / composer / 光照 / 后处理
- * 所有参数从 CONFIG 读取，便于全局调参
+ * 本次修改：合并最新探照灯渲染逻辑到源文件，恢复无版本配置引用。
  */
 
 import * as THREE from 'three';
@@ -16,6 +14,15 @@ import { CONFIG } from '../config/Config.js';
 
 const SKY_TEXTURE_WIDTH = 1;
 const SKY_TEXTURE_HEIGHT = 256;
+const SPOTLIGHT_POLE_RADIUS = 0.18;
+const SPOTLIGHT_POLE_SEGMENTS = 12;
+const SPOTLIGHT_HEAD_RADIUS = 0.58;
+const SPOTLIGHT_HEAD_LENGTH = 2.4;
+const SPOTLIGHT_HEAD_SEGMENTS = 20;
+const SPOTLIGHT_LENS_RADIUS = 0.7;
+const SPOTLIGHT_BEAM_SEGMENTS = 48;
+const SPOTLIGHT_POOL_SEGMENTS = 64;
+const SPOTLIGHT_MIN_LENGTH = 1;
 
 export class SceneManager {
     /**
@@ -146,6 +153,166 @@ export class SceneManager {
         sun.shadow.bias = -0.0005;
         this._scene.add(sun);
         this._sun = sun;
+
+        this._setupSiteSpotlights();
+    }
+
+    /**
+     * 按配置创建入口、塔吊、堆场与楼前探照灯。
+     * @private
+     */
+    _setupSiteSpotlights() {
+        this._siteSpotlights = [];
+        const spotlightConfigs = CONFIG.lighting.siteSpotlights || [];
+
+        spotlightConfigs.forEach((spotlightConfig) => {
+            const target = new THREE.Object3D();
+            target.name = `${spotlightConfig.name}-target`;
+            target.position.set(...spotlightConfig.target);
+            this._scene.add(target);
+
+            const light = new THREE.SpotLight(
+                spotlightConfig.color,
+                spotlightConfig.intensity,
+                spotlightConfig.distance,
+                spotlightConfig.angle,
+                spotlightConfig.penumbra,
+                spotlightConfig.decay
+            );
+            light.name = spotlightConfig.name;
+            light.position.set(...spotlightConfig.position);
+            light.target = target;
+            light.castShadow = true;
+            light.shadow.mapSize.width = CONFIG.render.shadowMapSize / 2;
+            light.shadow.mapSize.height = CONFIG.render.shadowMapSize / 2;
+            light.shadow.bias = -0.0004;
+
+            const visual = this._createSiteSpotlightVisual(spotlightConfig);
+            this._scene.add(visual.group);
+            this._scene.add(light);
+            this._siteSpotlights.push({
+                light,
+                baseIntensity: spotlightConfig.intensity,
+                beam: visual.beam,
+                pool: visual.pool,
+                lens: visual.lens,
+                baseBeamOpacity: spotlightConfig.beamOpacity,
+                basePoolOpacity: spotlightConfig.poolOpacity,
+                baseLensEmissiveIntensity: 1.4,
+            });
+        });
+    }
+
+    /**
+     * 创建探照灯的可见模型：灯杆、灯头、光束和地面光斑。
+     * @param {Object} spotlightConfig 探照灯配置
+     * @returns {Object} 可见组件集合
+     * @private
+     */
+    _createSiteSpotlightVisual(spotlightConfig) {
+        const group = new THREE.Group();
+        group.name = `${spotlightConfig.name}-visual`;
+
+        const position = new THREE.Vector3(...spotlightConfig.position);
+        const target = new THREE.Vector3(...spotlightConfig.target);
+        const direction = target.clone().sub(position);
+        const length = Math.max(SPOTLIGHT_MIN_LENGTH, direction.length());
+        direction.normalize();
+
+        const metalMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2f3542,
+            roughness: 0.55,
+            metalness: 0.72,
+        });
+        const lightColor = new THREE.Color(spotlightConfig.color);
+
+        const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                SPOTLIGHT_POLE_RADIUS,
+                SPOTLIGHT_POLE_RADIUS,
+                position.y,
+                SPOTLIGHT_POLE_SEGMENTS
+            ),
+            metalMaterial
+        );
+        pole.position.set(position.x, position.y / 2, position.z);
+        pole.castShadow = true;
+        group.add(pole);
+
+        const head = new THREE.Mesh(
+            new THREE.CylinderGeometry(
+                SPOTLIGHT_HEAD_RADIUS,
+                SPOTLIGHT_HEAD_RADIUS * 0.82,
+                SPOTLIGHT_HEAD_LENGTH,
+                SPOTLIGHT_HEAD_SEGMENTS
+            ),
+            metalMaterial
+        );
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        head.position.copy(position).add(direction.clone().multiplyScalar(SPOTLIGHT_HEAD_LENGTH / 2));
+        head.castShadow = true;
+        group.add(head);
+
+        const lensMaterial = new THREE.MeshStandardMaterial({
+            color: spotlightConfig.color,
+            emissive: spotlightConfig.color,
+            emissiveIntensity: 1.4,
+            roughness: 0.25,
+            metalness: 0.1,
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide,
+        });
+        const lens = new THREE.Mesh(
+            new THREE.CircleGeometry(SPOTLIGHT_LENS_RADIUS, SPOTLIGHT_HEAD_SEGMENTS),
+            lensMaterial
+        );
+        lens.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+        lens.position.copy(position).add(direction.clone().multiplyScalar(SPOTLIGHT_HEAD_LENGTH + 0.03));
+        lens.name = `${spotlightConfig.name}-lens`;
+        group.add(lens);
+
+        const beamMaterial = new THREE.MeshBasicMaterial({
+            color: lightColor,
+            transparent: true,
+            opacity: spotlightConfig.beamOpacity,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+        });
+        const beam = new THREE.Mesh(
+            new THREE.ConeGeometry(
+                spotlightConfig.beamRadius,
+                length,
+                SPOTLIGHT_BEAM_SEGMENTS,
+                1,
+                true
+            ),
+            beamMaterial
+        );
+        beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().negate());
+        beam.position.copy(position).add(direction.clone().multiplyScalar(length / 2));
+        beam.name = `${spotlightConfig.name}-beam`;
+        group.add(beam);
+
+        const poolMaterial = new THREE.MeshBasicMaterial({
+            color: lightColor,
+            transparent: true,
+            opacity: spotlightConfig.poolOpacity,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+        });
+        const pool = new THREE.Mesh(
+            new THREE.CircleGeometry(spotlightConfig.poolRadius, SPOTLIGHT_POOL_SEGMENTS),
+            poolMaterial
+        );
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(target.x, 0.06, target.z);
+        pool.name = `${spotlightConfig.name}-pool`;
+        group.add(pool);
+
+        return { group, beam, pool, lens };
     }
 
     /**
@@ -307,6 +474,8 @@ export class SceneManager {
         this._sun.color.set(preset.sun.color);
         this._sun.intensity = preset.sun.intensity;
         this._sun.position.set(...preset.sun.position);
+        this._setSiteSpotlightScale(preset.siteSpotlightScale ?? 1);
+        this._setSiteSpotlightVisualScale(preset.siteSpotlightBeamScale ?? 1);
 
         this._renderer.toneMappingExposure = preset.exposure;
         this._bloomPass.strength = preset.bloomStrength;
@@ -347,6 +516,8 @@ export class SceneManager {
                 intensity: this._sun.intensity,
                 position: this._sun.position.clone(),
             },
+            siteSpotlightScale: this._getSiteSpotlightScale(),
+            siteSpotlightBeamScale: this._getSiteSpotlightBeamScale(),
             exposure: this._renderer.toneMappingExposure,
             bloomStrength: this._bloomPass.strength,
             bloomThreshold: this._bloomPass.threshold,
@@ -378,12 +549,80 @@ export class SceneManager {
         this._sun.color.copy(start.sun.color).lerp(new THREE.Color(target.sun.color), progress);
         this._sun.intensity = THREE.MathUtils.lerp(start.sun.intensity, target.sun.intensity, progress);
         this._sun.position.copy(start.sun.position).lerp(new THREE.Vector3(...target.sun.position), progress);
+        this._setSiteSpotlightScale(THREE.MathUtils.lerp(
+            start.siteSpotlightScale,
+            target.siteSpotlightScale ?? 1,
+            progress
+        ));
+        this._setSiteSpotlightVisualScale(THREE.MathUtils.lerp(
+            start.siteSpotlightBeamScale,
+            target.siteSpotlightBeamScale ?? 1,
+            progress
+        ));
 
         this._renderer.toneMappingExposure = THREE.MathUtils.lerp(start.exposure, target.exposure, progress);
         this._bloomPass.strength = THREE.MathUtils.lerp(start.bloomStrength, target.bloomStrength, progress);
         this._bloomPass.threshold = THREE.MathUtils.lerp(start.bloomThreshold, target.bloomThreshold, progress);
 
         this._clampRender();
+    }
+
+    /**
+     * 获取当前探照灯强度缩放值。
+     * @returns {number} 当前强度缩放值
+     * @private
+     */
+    _getSiteSpotlightScale() {
+        const firstEntry = this._siteSpotlights?.[0];
+        if (!firstEntry || firstEntry.baseIntensity === 0) {
+            return 1;
+        }
+        return firstEntry.light.intensity / firstEntry.baseIntensity;
+    }
+
+    /**
+     * 按比例设置所有场地探照灯强度。
+     * @param {number} scale 强度缩放值
+     * @private
+     */
+    _setSiteSpotlightScale(scale) {
+        if (!this._siteSpotlights) {
+            return;
+        }
+
+        this._siteSpotlights.forEach(({ light, baseIntensity }) => {
+            light.intensity = baseIntensity * scale;
+        });
+    }
+
+    /**
+     * 获取当前探照灯可见光束缩放值。
+     * @returns {number} 当前光束缩放值
+     * @private
+     */
+    _getSiteSpotlightBeamScale() {
+        const firstEntry = this._siteSpotlights?.[0];
+        if (!firstEntry || firstEntry.baseBeamOpacity === 0) {
+            return 1;
+        }
+        return firstEntry.beam.material.opacity / firstEntry.baseBeamOpacity;
+    }
+
+    /**
+     * 按比例设置探照灯可见光束、光斑和灯头亮度。
+     * @param {number} scale 可见光效缩放值
+     * @private
+     */
+    _setSiteSpotlightVisualScale(scale) {
+        if (!this._siteSpotlights) {
+            return;
+        }
+
+        this._siteSpotlights.forEach((entry) => {
+            entry.beam.material.opacity = entry.baseBeamOpacity * scale;
+            entry.pool.material.opacity = entry.basePoolOpacity * scale;
+            entry.lens.material.emissiveIntensity = entry.baseLensEmissiveIntensity * Math.max(0.35, scale);
+        });
     }
 
     /**

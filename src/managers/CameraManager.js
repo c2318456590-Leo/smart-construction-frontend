@@ -1,12 +1,6 @@
 /**
  * CameraManager.js —— 摄像头管理器
- * 本次修改：摄像头飞行动画同步执行相机边界钳制，避免飞行后贴地或穿地。
- * 职责：
- *   1. 根据 CONFIG.cameras 创建所有 3D 摄像头模型并附加 HTML 标签
- *   2. 点击标签 / 调用 selectCamera 触发主相机飞行动画切换
- *   3. triggerAlert 触发摄像头警示灯与视锥的闪烁动画（持续 3 秒）
- *   4. updateLabels 将 3D 锚点投影到屏幕坐标，更新标签位置
- *   5. update 驱动闪烁动画与相机飞行的 lerp 插值
+ * 本次修改：合并最新摄像头视锥透明度调整到源文件，恢复无版本依赖引用。
  */
 import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
@@ -473,9 +467,9 @@ export class CameraManager {
     /** 刷新视锥透明度（选中态轻微高亮，非选中态恢复原始值） */
     _refreshFov(entry) {
         if (!entry.fovMesh || !entry.fovMesh.material || entry.alerting) return;
-        // 选中态从 0.25 降到 0.10，避免视角被视锥遮挡导致画面变暗
+        // 选中态只轻微提示，避免和探照灯光束混淆
         entry.fovMesh.material.opacity = (entry.id === this._currentId)
-            ? 0.10
+            ? 0.02
             : (entry.orig.fovOpacity ?? 0.12);
     }
 

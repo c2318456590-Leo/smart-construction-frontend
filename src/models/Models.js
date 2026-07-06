@@ -1,8 +1,6 @@
 /**
  * Models.js — 3D 模型工厂函数集合
- * 本次修改：补齐围墙与大门的 gate.side 显式校验，避免非南门配置被静默误用。
- * 所有函数返回 THREE.Group 或 THREE.Mesh，使用 PBR（MeshStandardMaterial）材质
- * 所有几何体参数均做下限保护 Math.max(0.01, value)，避免负值/零值导致报错
+ * 本次修改：合并最新模型参数到源文件，降低摄像头视锥并允许空粒子系统。
  */
 
 import * as THREE from 'three';
@@ -687,7 +685,7 @@ export function createCameraModel(camConfig) {
         new THREE.MeshBasicMaterial({
             color: color,
             transparent: true,
-            opacity: 0.08,
+            opacity: 0.008,
             side: THREE.DoubleSide,
             depthWrite: false,
         })
@@ -734,14 +732,14 @@ export function createRadarScan(config) {
 }
 
 /**
- * 创建粒子系统（随机分布的点云）
+ * 创建粒子系统（随机分布的点云，count 为 0 时返回空点云）
  * @param {Object} config { count, size, range, color, speed }
  * @returns {THREE.Points}
  */
 export function createParticleSystem(config) {
     // 合并 CONFIG.particles 默认值
     const cfg = Object.assign({}, CONFIG.particles, config || {});
-    const count = Math.max(1, Math.floor(cfg.count));
+    const count = Math.max(0, Math.floor(cfg.count));
     const size = Math.max(0.01, cfg.size);
     const range = Math.max(0.01, cfg.range);
     const color = cfg.color;

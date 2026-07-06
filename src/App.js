@@ -1,7 +1,6 @@
 /**
- * App.js — 企业级数字孪生监控平台 主入口
- * 本次修改：移除雷达扫描可视元素，保留工地粒子、围墙和大门渲染。
- * 整合所有模块：场景、管理器、UI、通信
+ * App.js — 企业级数字孪生监控平台主入口
+ * 本次修改：合并最新场景链路到源文件，移除版本化模块引用。
  */
 
 import * as THREE from 'three';
@@ -19,7 +18,6 @@ import {
     createBuilding,
     createCrane,
     createDangerZone,
-    createParticleSystem,
     createPerimeterWall,
     createGate,
 } from './models/Models.js';
@@ -95,7 +93,7 @@ class App {
         }
     }
 
-    /** 构建工地场景：地面、建筑、塔吊、危险区域、雷达、粒子 */
+    /** 构建工地场景：地面、建筑、塔吊、危险区域、围墙与大门 */
     _buildSite() {
         // 地面
         const ground = createSiteGround(CONFIG.scene.size);
@@ -118,10 +116,6 @@ class App {
             const z = createDangerZone(cfg);
             this.scene.add(z);
         });
-
-        // 粒子系统
-        this.particles = createParticleSystem(CONFIG.particles);
-        this.scene.add(this.particles);
 
         // 围墙与大门
         const wall = createPerimeterWall(CONFIG.perimeter);
@@ -332,19 +326,6 @@ class App {
             // 报警特效更新
             this.alertMgr.update(delta, elapsed * 1000); // elapsed 转毫秒
             this.alertMgr.setLabelPosition(this.camera, this.renderer);
-
-            // 粒子动画
-            if (this.particles) {
-                const pos = this.particles.geometry.attributes.position;
-                const arr = pos.array;
-                for (let i = 0; i < arr.length; i += 3) {
-                    arr[i + 1] += CONFIG.particles.speed;
-                    if (arr[i + 1] > CONFIG.particles.range / 2) {
-                        arr[i + 1] = -CONFIG.particles.range / 2;
-                    }
-                }
-                pos.needsUpdate = true;
-            }
 
             // FPS 计算
             this._calcFPS(elapsed);

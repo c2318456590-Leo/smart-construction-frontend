@@ -48,6 +48,7 @@ Thumbs.db
 *.tmp
 *.log
 *.bak
+run_benji.bat
 
 # 文档资料（非代码资产，不提交）
 *.docx

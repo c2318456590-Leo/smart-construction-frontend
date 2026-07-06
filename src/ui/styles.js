@@ -1,6 +1,6 @@
 /**
  * styles.js — UI 全局样式注入
- * 本次修改：从 UIManager.js 拆出大屏样式注入逻辑，避免 UI 编排类继续承担 CSS 生成职责。
+ * 本次修改：补齐昼夜主题 Switch 触控尺寸与焦点样式，保持大屏样式统一注入。
  */
 
 import { CONFIG } from '../config/Config.js';
@@ -283,6 +283,69 @@ export function injectUIStyles() {
         gap: 5px;
     }
     .sys-row { display: flex; justify-content: space-between; }
+
+    #theme-switch {
+        position: absolute;
+        left: 10px;
+        bottom: 10px;
+        z-index: 10;
+        padding: 8px 14px;
+        border-radius: 8px;
+        min-width: 90px;
+    }
+    .theme-switch-inner {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .theme-switch-label {
+        font-size: 12px;
+        color: #c8d6e8;
+        white-space: nowrap;
+        user-select: none;
+    }
+    .theme-toggle {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+        cursor: pointer;
+        touch-action: manipulation;
+    }
+    .theme-toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .theme-toggle-slider {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(100, 180, 255, 0.3);
+        border-radius: 12px;
+        transition: background 0.3s;
+    }
+    .theme-toggle-slider::before {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        left: 2px;
+        bottom: 2px;
+        background: #e8f0ff;
+        border-radius: 50%;
+        transition: transform 0.3s;
+    }
+    .theme-toggle input:focus-visible + .theme-toggle-slider {
+        outline: 2px solid ${c.accent};
+        outline-offset: 3px;
+    }
+    .theme-toggle input:checked + .theme-toggle-slider {
+        background: rgba(40, 60, 120, 0.6);
+    }
+    .theme-toggle input:checked + .theme-toggle-slider::before {
+        transform: translateX(20px);
+        background: #8ab4ff;
+    }
     `;
 
     const style = document.createElement('style');

@@ -1,5 +1,6 @@
 /**
  * App.js — 企业级数字孪生监控平台 主入口
+ * 本次修改：移除雷达扫描可视元素，保留工地粒子、围墙和大门渲染。
  * 整合所有模块：场景、管理器、UI、通信
  */
 
@@ -18,8 +19,9 @@ import {
     createBuilding,
     createCrane,
     createDangerZone,
-    createRadarScan,
     createParticleSystem,
+    createPerimeterWall,
+    createGate,
 } from './models/Models.js';
 
 class App {
@@ -117,13 +119,15 @@ class App {
             this.scene.add(z);
         });
 
-        // 雷达扫描
-        this.radar = createRadarScan(CONFIG.radar);
-        this.scene.add(this.radar);
-
         // 粒子系统
         this.particles = createParticleSystem(CONFIG.particles);
         this.scene.add(this.particles);
+
+        // 围墙与大门
+        const wall = createPerimeterWall(CONFIG.perimeter);
+        this.scene.add(wall);
+        const gate = createGate(CONFIG.perimeter);
+        this.scene.add(gate);
     }
 
     /** 绑定 WebSocket 事件 */
@@ -230,6 +234,11 @@ class App {
                 this._stopDemo();
             }
         });
+
+        // 昼夜主题切换
+        this.ui.on('toggleTheme', (isNight) => {
+            this.sceneMgr.setTheme(isNight ? 'night' : 'day');
+        });
     }
 
     /**
@@ -323,11 +332,6 @@ class App {
             // 报警特效更新
             this.alertMgr.update(delta, elapsed * 1000); // elapsed 转毫秒
             this.alertMgr.setLabelPosition(this.camera, this.renderer);
-
-            // 雷达旋转
-            if (this.radar) {
-                this.radar.rotation.y += CONFIG.radar.speed;
-            }
 
             // 粒子动画
             if (this.particles) {

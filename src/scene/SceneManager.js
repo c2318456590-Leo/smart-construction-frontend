@@ -1,5 +1,6 @@
 /**
  * SceneManager.js — 场景管理器
+ * 本次修改：使用渐变天空纹理并统一钳制相机视角，避免低角度露出地面下方虚空。
  * 统一管理 renderer / scene / camera / controls / composer / 光照 / 后处理
  * 所有参数从 CONFIG 读取，便于全局调参
  */
@@ -12,6 +13,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { CONFIG } from '../config/Config.js';
+
+const SKY_TEXTURE_WIDTH = 1;
+const SKY_TEXTURE_HEIGHT = 256;
 
 export class SceneManager {
     /**
@@ -37,6 +41,13 @@ export class SceneManager {
         // ====== 场景 ======
         this._scene = new THREE.Scene();
         this._scene.background = new THREE.Color(CONFIG.scene.bgColor);
+        this._skyCanvas = document.createElement('canvas');
+        this._skyCanvas.width = SKY_TEXTURE_WIDTH;
+        this._skyCanvas.height = SKY_TEXTURE_HEIGHT;
+        this._skyTexture = new THREE.CanvasTexture(this._skyCanvas);
+        this._skyTexture.colorSpace = THREE.SRGBColorSpace;
+        this._skyTop = new THREE.Color(CONFIG.scene.bgColor);
+        this._skyBottom = new THREE.Color(CONFIG.scene.bgColor);
         // 雾效，增加深度感与远景消隐
         this._scene.fog = new THREE.Fog(
             CONFIG.scene.fogColor,
@@ -73,6 +84,9 @@ export class SceneManager {
         );
         // 限制俯仰角，防止视角翻到地下
         this._controls.maxPolarAngle = CONFIG.camera.maxPolar;
+        this._controls.minDistance = CONFIG.camera.minDistance;
+        this._controls.maxDistance = CONFIG.camera.maxDistance;
+        this._clampCameraView();
         this._controls.update();
 
         // ====== 光照系统 ======
@@ -80,6 +94,9 @@ export class SceneManager {
 
         // ====== 后处理 ======
         this._setupPostprocessing();
+
+        // ====== 默认白天主题（立即应用，无过渡） ======
+        this._applyThemeImmediate(CONFIG.theme[CONFIG.theme.default]);
     }
 
     /**
@@ -93,6 +110,7 @@ export class SceneManager {
             CONFIG.lighting.ambientIntensity
         );
         this._scene.add(ambient);
+        this._ambient = ambient;
 
         // 半球光：天空色与地面色融合，模拟天空散射
         const hemi = new THREE.HemisphereLight(
@@ -101,6 +119,7 @@ export class SceneManager {
             CONFIG.lighting.hemiIntensity
         );
         this._scene.add(hemi);
+        this._hemi = hemi;
 
         // 主太阳光：方向光，投射阴影
         const sun = new THREE.DirectionalLight(
@@ -175,12 +194,30 @@ export class SceneManager {
     get controls() { return this._controls; }
 
     /**
-     * 每帧更新：更新控制器 + 渲染后处理
+     * 每帧更新：更新控制器 + 主题过渡 + 渲染后处理
      * @param {number} delta 帧间隔时间（秒）
      * @param {number} elapsed 累计运行时间（秒）
      */
     update(delta, elapsed) {
         this._controls.update();
+        if (this._clampCameraView()) {
+            this._controls.update();
+        }
+
+        // 主题平滑过渡
+        if (this._themeTarget && this._themeStart) {
+            const durationMs = Math.max(1, CONFIG.theme.transitionDuration);
+            this._themeElapsedMs += delta * 1000;
+            const progress = Math.min(this._themeElapsedMs / durationMs, 1);
+            const easedProgress = THREE.MathUtils.smoothstep(progress, 0, 1);
+
+            this._applyThemeMix(this._themeStart, this._themeTarget, easedProgress);
+
+            if (progress >= 1) {
+                this._applyThemeImmediate(this._themeTarget, this._themeTargetName);
+            }
+        }
+
         this._composer.render(delta);
     }
 
@@ -217,6 +254,195 @@ export class SceneManager {
      */
     remove(obj) {
         this._scene.remove(obj);
+    }
+
+    /**
+     * 切换场景主题（白天/夜晚），启动平滑过渡动画。
+     * @param {string} themeName - 主题名称，'day' 或 'night'
+     */
+    setTheme(themeName) {
+        const preset = CONFIG.theme[themeName];
+        if (!preset) {
+            console.warn(`[SceneManager] 未找到主题配置: ${themeName}`);
+            return;
+        }
+
+        this._themeStart = this._captureCurrentTheme();
+        this._themeTarget = preset;
+        this._themeTargetName = themeName;
+        this._themeElapsedMs = 0;
+    }
+
+    /**
+     * 将渲染参数（曝光、bloom 强度）钳制在配置的上下限内。
+     * 在主题切换和曝光调节后调用，防止画面过暗或过亮。
+     * @private
+     */
+    _clampRender() {
+        const { exposureMin, exposureMax, bloom } = CONFIG.render;
+        this._renderer.toneMappingExposure = THREE.MathUtils.clamp(
+            this._renderer.toneMappingExposure, exposureMin, exposureMax
+        );
+        this._bloomPass.strength = THREE.MathUtils.clamp(
+            this._bloomPass.strength, bloom.strengthMin, bloom.strengthMax
+        );
+    }
+
+    /**
+     * 立即应用主题预设（无过渡动画），用于初始化。
+     * @param {Object} preset - 主题预设对象
+     * @private
+     */
+    _applyThemeImmediate(preset, themeName = CONFIG.theme.default) {
+        this._setSkyBackground(preset.skyTop ?? preset.bgColor, preset.skyBottom ?? preset.bgColor);
+        this._scene.fog.color = new THREE.Color(preset.fogColor);
+        this._scene.fog.near = preset.fogNear;
+        this._scene.fog.far = preset.fogFar;
+
+        this._ambient.color.set(preset.ambient.color);
+        this._ambient.intensity = preset.ambient.intensity;
+        this._hemi.color.set(preset.hemi.sky);
+        this._hemi.groundColor.set(preset.hemi.ground);
+        this._hemi.intensity = preset.hemi.intensity;
+        this._sun.color.set(preset.sun.color);
+        this._sun.intensity = preset.sun.intensity;
+        this._sun.position.set(...preset.sun.position);
+
+        this._renderer.toneMappingExposure = preset.exposure;
+        this._bloomPass.strength = preset.bloomStrength;
+        this._bloomPass.threshold = preset.bloomThreshold;
+
+        this._themeStart = null;
+        this._themeTarget = null;
+        this._themeTargetName = null;
+        this._themeElapsedMs = 0;
+        this._currentThemeName = themeName;
+
+        this._clampRender();
+    }
+
+    /**
+     * 捕获当前主题相关渲染状态，作为后续过渡插值起点。
+     * @returns {Object} 当前颜色、光照、雾效、曝光与 Bloom 参数快照
+     * @private
+     */
+    _captureCurrentTheme() {
+        return {
+            skyTop: this._skyTop.clone(),
+            skyBottom: this._skyBottom.clone(),
+            fogColor: this._scene.fog.color.clone(),
+            fogNear: this._scene.fog.near,
+            fogFar: this._scene.fog.far,
+            ambient: {
+                color: this._ambient.color.clone(),
+                intensity: this._ambient.intensity,
+            },
+            hemi: {
+                sky: this._hemi.color.clone(),
+                ground: this._hemi.groundColor.clone(),
+                intensity: this._hemi.intensity,
+            },
+            sun: {
+                color: this._sun.color.clone(),
+                intensity: this._sun.intensity,
+                position: this._sun.position.clone(),
+            },
+            exposure: this._renderer.toneMappingExposure,
+            bloomStrength: this._bloomPass.strength,
+            bloomThreshold: this._bloomPass.threshold,
+        };
+    }
+
+    /**
+     * 将当前主题状态按进度插值到目标主题。
+     * @param {Object} start - 过渡起始状态快照
+     * @param {Object} target - CONFIG.theme 中的目标主题配置
+     * @param {number} progress - 0 到 1 的插值进度
+     * @private
+     */
+    _applyThemeMix(start, target, progress) {
+        const skyTop = start.skyTop.clone().lerp(new THREE.Color(target.skyTop ?? target.bgColor), progress);
+        const skyBottom = start.skyBottom.clone().lerp(new THREE.Color(target.skyBottom ?? target.bgColor), progress);
+        this._setSkyBackground(skyTop, skyBottom);
+        this._scene.fog.color = start.fogColor.clone().lerp(new THREE.Color(target.fogColor), progress);
+        this._scene.fog.near = THREE.MathUtils.lerp(start.fogNear, target.fogNear, progress);
+        this._scene.fog.far = THREE.MathUtils.lerp(start.fogFar, target.fogFar, progress);
+
+        this._ambient.color.copy(start.ambient.color).lerp(new THREE.Color(target.ambient.color), progress);
+        this._ambient.intensity = THREE.MathUtils.lerp(start.ambient.intensity, target.ambient.intensity, progress);
+
+        this._hemi.color.copy(start.hemi.sky).lerp(new THREE.Color(target.hemi.sky), progress);
+        this._hemi.groundColor.copy(start.hemi.ground).lerp(new THREE.Color(target.hemi.ground), progress);
+        this._hemi.intensity = THREE.MathUtils.lerp(start.hemi.intensity, target.hemi.intensity, progress);
+
+        this._sun.color.copy(start.sun.color).lerp(new THREE.Color(target.sun.color), progress);
+        this._sun.intensity = THREE.MathUtils.lerp(start.sun.intensity, target.sun.intensity, progress);
+        this._sun.position.copy(start.sun.position).lerp(new THREE.Vector3(...target.sun.position), progress);
+
+        this._renderer.toneMappingExposure = THREE.MathUtils.lerp(start.exposure, target.exposure, progress);
+        this._bloomPass.strength = THREE.MathUtils.lerp(start.bloomStrength, target.bloomStrength, progress);
+        this._bloomPass.threshold = THREE.MathUtils.lerp(start.bloomThreshold, target.bloomThreshold, progress);
+
+        this._clampRender();
+    }
+
+    /**
+     * 将场景背景更新为竖向渐变天空纹理。
+     * @param {number|THREE.Color} topColor 天空顶部颜色
+     * @param {number|THREE.Color} bottomColor 天空底部颜色
+     * @private
+     */
+    _setSkyBackground(topColor, bottomColor) {
+        const top = new THREE.Color(topColor);
+        const bottom = new THREE.Color(bottomColor);
+        const ctx = this._skyCanvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, SKY_TEXTURE_HEIGHT);
+
+        gradient.addColorStop(0, `#${top.getHexString()}`);
+        gradient.addColorStop(1, `#${bottom.getHexString()}`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, SKY_TEXTURE_WIDTH, SKY_TEXTURE_HEIGHT);
+
+        this._skyTexture.needsUpdate = true;
+        this._scene.background = this._skyTexture;
+        this._skyTop.copy(top);
+        this._skyBottom.copy(bottom);
+    }
+
+    /**
+     * 限制主相机和轨道控制目标，防止低角度看到地面下方虚空。
+     * @returns {boolean} 是否改动了相机或控制目标
+     * @private
+     */
+    _clampCameraView() {
+        const cfg = CONFIG.camera;
+        const target = this._controls.target;
+        let changed = false;
+
+        if (cfg.targetBounds) {
+            const nextX = THREE.MathUtils.clamp(target.x, cfg.targetBounds.x[0], cfg.targetBounds.x[1]);
+            const nextZ = THREE.MathUtils.clamp(target.z, cfg.targetBounds.z[0], cfg.targetBounds.z[1]);
+            if (nextX !== target.x || nextZ !== target.z) {
+                target.x = nextX;
+                target.z = nextZ;
+                changed = true;
+            }
+        }
+
+        if (Number.isFinite(cfg.minTargetY) && target.y < cfg.minTargetY) {
+            target.y = cfg.minTargetY;
+            changed = true;
+        }
+        if (Number.isFinite(cfg.maxTargetY) && target.y > cfg.maxTargetY) {
+            target.y = cfg.maxTargetY;
+            changed = true;
+        }
+        if (Number.isFinite(cfg.minHeight) && this._camera.position.y < cfg.minHeight) {
+            this._camera.position.y = cfg.minHeight;
+            changed = true;
+        }
+
+        return changed;
     }
 }
 

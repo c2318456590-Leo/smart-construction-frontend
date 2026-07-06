@@ -1,5 +1,6 @@
 /**
  * CameraManager.js —— 摄像头管理器
+ * 本次修改：摄像头飞行动画同步执行相机边界钳制，避免飞行后贴地或穿地。
  * 职责：
  *   1. 根据 CONFIG.cameras 创建所有 3D 摄像头模型并附加 HTML 标签
  *   2. 点击标签 / 调用 selectCamera 触发主相机飞行动画切换
@@ -97,6 +98,9 @@ export class CameraManager {
                 alertStartMs: 0,
             });
         });
+
+        // 动态计算飞行速度上限：以 cam1→cam3 为参考距离
+        this._computeSpeedLimits();
     }
 
     /**
@@ -138,7 +142,8 @@ export class CameraManager {
         const look = new THREE.Vector3(
             entry.config.lookAt[0], entry.config.lookAt[1], entry.config.lookAt[2]
         );
-        this._flyToPos.set(pos.x + 18, pos.y + 12, pos.z + 22);
+        const off = CONFIG.cameraFly.flyOffset;
+        this._flyToPos.set(pos.x + off[0], pos.y + off[1], pos.z + off[2]);
         this._flyToTarget.copy(look);
         this._flying = true;
         this.controls.enabled = false; // 飞行期间禁用控制器，避免冲突
@@ -218,16 +223,38 @@ export class CameraManager {
         this._elapsedMs += dt * 1000;
         const elapsed = this._elapsedMs;
 
-        // 相机飞行动画（lerp 平滑移动 camera 与 controls.target）
+        // 相机飞行动画（lerp 平滑移动 camera 与 controls.target，带速度上限钳制）
         if (this._flying) {
-            const k = 1 - Math.exp(-dt * 5); // 帧率无关的插值因子
-            this.camera.position.lerp(this._flyToPos, k);
-            this.controls.target.lerp(this._flyToTarget, k);
+            const k = 1 - Math.exp(-dt * CONFIG.cameraFly.lerpRate);
+
+            // 位置：期望位移 → 速度上限钳制
+            const desiredMove = this._flyToPos.clone().sub(this.camera.position).multiplyScalar(k);
+            const maxMove = this._maxLinSpeed * dt;
+            if (desiredMove.length() > maxMove) {
+                desiredMove.setLength(maxMove);
+            }
+            this.camera.position.add(desiredMove);
+
+            // 目标点：同理钳制
+            const desiredTargetMove = this._flyToTarget.clone().sub(this.controls.target).multiplyScalar(k);
+            const maxTargetMove = this._maxTargetSpeed * dt;
+            if (desiredTargetMove.length() > maxTargetMove) {
+                desiredTargetMove.setLength(maxTargetMove);
+            }
+            this.controls.target.add(desiredTargetMove);
+            this._clampCameraView();
+
             this.controls.update();
-            if (this.camera.position.distanceTo(this._flyToPos) < 0.5) {
+
+            // 到达判定
+            const posRemain = this.camera.position.distanceTo(this._flyToPos);
+            const targetRemain = this.controls.target.distanceTo(this._flyToTarget);
+            if (posRemain < CONFIG.cameraFly.arrivalThreshold &&
+                targetRemain < CONFIG.cameraFly.arrivalThreshold) {
+                this.camera.position.copy(this._flyToPos);
+                this.controls.target.copy(this._flyToTarget);
+                this._clampCameraView();
                 this._flying = false;
-                // 飞行结束：重新启用控制器，并强制同步内部状态
-                // 避免飞行结束后视角被锁死或弹回旧位置
                 this.controls.enabled = true;
                 this.controls.update();
             }
@@ -281,6 +308,59 @@ export class CameraManager {
     }
 
     // ===================== 内部方法 =====================
+
+    /**
+     * 以主监控(cam1)到塔吊监控(cam3)的飞行距离为参考，
+     * 计算线速度与目标点移动速度的上限。
+     */
+    _computeSpeedLimits() {
+        const { refDurationMs, flyOffset } = CONFIG.cameraFly;
+        const cam1 = CONFIG.cameras.find(c => c.id === 1);
+        const cam3 = CONFIG.cameras.find(c => c.id === 3);
+
+        if (!cam1 || !cam3) {
+            // 回退安全默认值
+            this._maxLinSpeed = 200;
+            this._maxTargetSpeed = 50;
+            return;
+        }
+
+        const off = flyOffset;
+        const fly1 = new THREE.Vector3(cam1.pos[0] + off[0], cam1.pos[1] + off[1], cam1.pos[2] + off[2]);
+        const fly3 = new THREE.Vector3(cam3.pos[0] + off[0], cam3.pos[1] + off[1], cam3.pos[2] + off[2]);
+        const posDist = fly1.distanceTo(fly3);
+
+        const target1 = new THREE.Vector3(...cam1.lookAt);
+        const target3 = new THREE.Vector3(...cam3.lookAt);
+        const targetDist = target1.distanceTo(target3);
+
+        const refSeconds = refDurationMs / 1000;
+        this._maxLinSpeed = posDist / refSeconds;
+        this._maxTargetSpeed = targetDist / refSeconds;
+    }
+
+    /**
+     * 将飞行动画产生的相机位置与控制目标限制在场地安全范围内。
+     * @private
+     */
+    _clampCameraView() {
+        const cfg = CONFIG.camera;
+        const target = this.controls.target;
+
+        if (cfg.targetBounds) {
+            target.x = THREE.MathUtils.clamp(target.x, cfg.targetBounds.x[0], cfg.targetBounds.x[1]);
+            target.z = THREE.MathUtils.clamp(target.z, cfg.targetBounds.z[0], cfg.targetBounds.z[1]);
+        }
+        if (Number.isFinite(cfg.minTargetY)) {
+            target.y = Math.max(target.y, cfg.minTargetY);
+        }
+        if (Number.isFinite(cfg.maxTargetY)) {
+            target.y = Math.min(target.y, cfg.maxTargetY);
+        }
+        if (Number.isFinite(cfg.minHeight)) {
+            this.camera.position.y = Math.max(this.camera.position.y, cfg.minHeight);
+        }
+    }
 
     /** 在摄像头模型中查找警示灯与视锥 */
     _findParts(mesh) {

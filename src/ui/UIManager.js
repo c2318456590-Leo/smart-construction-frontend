@@ -1,7 +1,6 @@
 /**
  * UIManager.js — UI 编排管理器
- * 本次修改：拆分顶部栏、统计面板、视频面板、事件列表、底部面板与 API 请求逻辑；
- * UIManager 只保留组件编排、事件总线、公共状态更新接口和生命周期清理。
+ * 本次修改：补齐昼夜主题开关转发接口，UIManager 继续只负责组件编排、事件总线与公共状态更新。
  */
 
 import { CONFIG } from '../config/Config.js';
@@ -10,6 +9,7 @@ import { TopBar } from './components/TopBar.js';
 import { StatsPanel } from './components/StatsPanel.js';
 import { VideoPanel } from './components/VideoPanel.js';
 import { BottomPanel } from './components/BottomPanel.js';
+import { ThemeSwitch } from './components/ThemeSwitch.js';
 import { setText } from './components/helpers.js';
 
 export class UIManager {
@@ -28,7 +28,8 @@ export class UIManager {
         this.statsPanel = new StatsPanel();
         this.videoPanel = new VideoPanel({ emit: (...args) => this._emit(...args) });
         this.bottomPanel = new BottomPanel();
-        this._components = [this.topBar, this.statsPanel, this.videoPanel, this.bottomPanel];
+        this._themeSwitch = new ThemeSwitch({ emit: (...args) => this._emit(...args) });
+        this._components = [this.topBar, this.statsPanel, this.videoPanel, this.bottomPanel, this._themeSwitch];
 
         Object.assign(
             this.els,
@@ -37,6 +38,7 @@ export class UIManager {
             this.videoPanel.init(),
             this.bottomPanel.init()
         );
+        this._themeSwitch.init();
 
         this.updateTime();
         this.timeTimer = setInterval(() => this.updateTime(), 1000);
@@ -57,6 +59,15 @@ export class UIManager {
 
     setDemoMode(on, emit = false) {
         this.topBar?.setDemoMode(on, emit);
+    }
+
+    /**
+     * 同步昼夜主题开关状态。
+     * @param {boolean} on - true 表示夜晚，false 表示白天
+     * @param {boolean} [emit=true] - 是否向外触发 toggleTheme 事件
+     */
+    setDayNight(on, emit = true) {
+        this._themeSwitch?.setDayNight(on, emit);
     }
 
     get demoMode() {

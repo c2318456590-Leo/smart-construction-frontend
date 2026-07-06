@@ -1,11 +1,22 @@
 /**
  * Models.js — 3D 模型工厂函数集合
+ * 本次修改：补齐围墙与大门的 gate.side 显式校验，避免非南门配置被静默误用。
  * 所有函数返回 THREE.Group 或 THREE.Mesh，使用 PBR（MeshStandardMaterial）材质
  * 所有几何体参数均做下限保护 Math.max(0.01, value)，避免负值/零值导致报错
  */
 
 import * as THREE from 'three';
 import { CONFIG } from '../config/Config.js';
+
+const MIN_GEOMETRY_SIZE = 0.01;
+const SUPPORTED_GATE_SIDE = 'south';
+const GATE_PILLAR_RADIUS = 0.4;
+const GATE_PILLAR_SEGMENTS = 8;
+const GATE_BEAM_HEIGHT = 0.5;
+const GATE_BEAM_DEPTH = 0.8;
+const GATE_BAR_COUNT = 3;
+const GATE_BAR_HEIGHT = 0.15;
+const GATE_BAR_DEPTH = 0.15;
 
 /**
  * 创建工地地面：大地面 + 水泥路面 + 网格线
@@ -48,7 +59,163 @@ export function createSiteGround(size) {
     const grid = new THREE.GridHelper(s, 40, 0x223344, 0x112233);
     group.add(grid);
 
+    // 地面裙边：更大的底面防止边缘虚空
+    if (CONFIG.scene.groundSkirt) {
+        const skirtSize = CONFIG.scene.groundSkirtSize;
+        const skirtGeo = new THREE.PlaneGeometry(skirtSize, skirtSize);
+        const skirtMat = new THREE.MeshStandardMaterial({
+            color: 0x3a4a3a,  // 深绿灰，模拟远处地面
+            roughness: 0.95,
+            metalness: 0.0,
+        });
+        const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+        skirt.rotation.x = -Math.PI / 2;
+        skirt.position.y = -0.1;  // 略低于主地面
+        skirt.receiveShadow = false;
+        group.add(skirt);
+    }
+
     return group;
+}
+
+/**
+ * 创建工地围墙（四面墙体，南侧留出大门缺口）。
+ * @param {Object} config - 围墙配置对象
+ * @param {number} config.size - 围墙边长
+ * @param {number} config.wallHeight - 墙高
+ * @param {number} config.wallThickness - 墙厚
+ * @param {number} config.wallColor - 墙色（hex）
+ * @param {Object} config.gate - 大门配置
+ * @returns {THREE.Group} 围墙 Group
+ */
+export function createPerimeterWall(config) {
+    const group = new THREE.Group();
+    group.name = 'perimeter-wall';
+
+    const { size, wallHeight, wallThickness, wallColor, gate } = config;
+    const half = size / 2;
+    const h = Math.max(MIN_GEOMETRY_SIZE, wallHeight);
+    const t = Math.max(MIN_GEOMETRY_SIZE, wallThickness);
+    const side = normalizeGateSide(gate.side);
+
+    const material = new THREE.MeshStandardMaterial({
+        color: wallColor,
+        roughness: 0.85,
+        metalness: 0.05,
+    });
+
+    // 创建墙段的辅助函数
+    const makeWallSegment = (width, posX, posZ, rotY = 0) => {
+        const geo = new THREE.BoxGeometry(width, h, t);
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.position.set(posX, h / 2, posZ);
+        mesh.rotation.y = rotY;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+    };
+
+    // 北墙（z = -half）
+    group.add(makeWallSegment(size, 0, -half));
+
+    // 东墙（x = +half）
+    group.add(makeWallSegment(size, half, 0, Math.PI / 2));
+
+    // 西墙（x = -half）
+    group.add(makeWallSegment(size, -half, 0, Math.PI / 2));
+
+    // 南墙（z = +half），留出大门缺口（大门在正中）
+    const southSegmentWidth = side === SUPPORTED_GATE_SIDE
+        ? Math.max(MIN_GEOMETRY_SIZE, (size - gate.width) / 2)
+        : size;
+    // 左段（西侧）
+    group.add(makeWallSegment(southSegmentWidth, -(half - southSegmentWidth / 2), half));
+    // 右段（东侧）
+    if (side === SUPPORTED_GATE_SIDE) {
+        group.add(makeWallSegment(southSegmentWidth, (half - southSegmentWidth / 2), half));
+    }
+
+    return group;
+}
+
+/**
+ * 创建工地大门（两根门柱 + 门梁 + 横杆装饰）。
+ * @param {Object} config - 围墙配置对象（含 gate 子配置）
+ * @returns {THREE.Group} 大门 Group
+ */
+export function createGate(config) {
+    const group = new THREE.Group();
+    group.name = 'site-gate';
+
+    const { size, gate } = config;
+    const half = size / 2;
+    const gateHalf = gate.width / 2;
+    const gateH = Math.max(MIN_GEOMETRY_SIZE, gate.height);
+    normalizeGateSide(gate.side);
+
+    const pillarMat = new THREE.MeshStandardMaterial({
+        color: 0x666666,
+        roughness: 0.6,
+        metalness: 0.3,
+    });
+
+    const beamMat = new THREE.MeshStandardMaterial({
+        color: 0x4488cc,
+        roughness: 0.5,
+        metalness: 0.4,
+    });
+
+    // 门柱（圆柱）
+    const pillarGeo = new THREE.CylinderGeometry(
+        GATE_PILLAR_RADIUS,
+        GATE_PILLAR_RADIUS,
+        gateH,
+        GATE_PILLAR_SEGMENTS
+    );
+
+    const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
+    leftPillar.position.set(-gateHalf, gateH / 2, half);
+    leftPillar.castShadow = true;
+    group.add(leftPillar);
+
+    const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
+    rightPillar.position.set(gateHalf, gateH / 2, half);
+    rightPillar.castShadow = true;
+    group.add(rightPillar);
+
+    // 门梁（横跨两柱顶部）
+    const beamGeo = new THREE.BoxGeometry(
+        gate.width + GATE_PILLAR_RADIUS * 2,
+        GATE_BEAM_HEIGHT,
+        GATE_BEAM_DEPTH
+    );
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, gateH, half);
+    beam.castShadow = true;
+    group.add(beam);
+
+    // 横杆装饰（门梁下方横条）
+    const barGeo = new THREE.BoxGeometry(gate.width, GATE_BAR_HEIGHT, GATE_BAR_DEPTH);
+    const barMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.5, roughness: 0.4 });
+    for (let i = 1; i <= GATE_BAR_COUNT; i++) {
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.set(0, gateH * (i / (GATE_BAR_COUNT + 1)), half);
+        group.add(bar);
+    }
+
+    return group;
+}
+
+/**
+ * 校验大门方向配置，当前版本仅支持南侧大门。
+ * @param {string} side 大门方向配置
+ * @returns {string} 可用于建模的大门方向
+ */
+function normalizeGateSide(side) {
+    if (side === SUPPORTED_GATE_SIDE) return side;
+
+    console.warn(`[Models] gate.side="${side}" 暂不支持，已回退为 "${SUPPORTED_GATE_SIDE}"。`);
+    return SUPPORTED_GATE_SIDE;
 }
 
 /**

@@ -15,6 +15,8 @@
 - PBR 材质 + ACES 电影级色调映射
 - EffectComposer 后处理（UnrealBloom 泛光 + FXAA 抗锯齿）
 - 动态天空、HDR 环境光、PCFSoft 软阴影
+- 白天 / 夜晚主题切换（左下角 Switch，支持平滑过渡）
+- 围墙、大门与地面裙边遮挡，减少场地边缘穿帮
 - 雷达扫描、粒子系统、工业风报警特效（发光柱 / Pulse Ring / 浮动标签）
 - 摄像头视锥可视化 + 飞行动画切换
 
@@ -218,6 +220,13 @@ python -m http.server 8080
 3. 点击"添加视频源"
 4. 点击对应摄像头按钮即可在视频监控区看到画面并启动 AI 检测
 
+### 4. 验证四项优化
+
+1. 页面加载后应默认为白天主题，天空为浅蓝色，画面不过曝。
+2. 点击左下角昼夜 Switch，确认白天 / 夜晚在约 1.2 秒内平滑过渡。
+3. 缩放视角时距离被限制在合理范围，旋转视角时围墙和地面裙边遮挡场地边缘。
+4. 逐个点击 4 路摄像头，确认飞行速度平滑且入口、塔吊等关键视角覆盖合理。
+
 ## 配置说明
 
 ### 前端配置（src/config/Config.js）
@@ -227,9 +236,12 @@ python -m http.server 8080
 | 分类 | 说明 | 关键参数 |
 |------|------|---------|
 | `colors` | 深蓝科技风主题色 | accent / danger / warning / success |
-| `scene` | 3D 场景尺寸与雾效 | size=200, fogNear=150, fogFar=500 |
-| `camera` | 主相机参数 | fov=50, position=[140,110,140] |
-| `render` | 渲染与后处理 | shadowMapSize=4096, bloom(strength=0.8) |
+| `scene` | 3D 场景尺寸、雾效与地面裙边 | size=200, groundSkirt=true, groundSkirtSize=600 |
+| `camera` | 主相机参数与缩放距离限制 | fov=50, minDistance=25, maxDistance=280 |
+| `render` | 渲染与后处理 | exposureMin/Max, bloom.thresholdDay=0.6 |
+| `theme` | 昼夜主题 | default=day, transitionDuration=1200ms |
+| `perimeter` | 围墙与大门 | size=200, wallHeight=4, gate.side=south |
+| `cameraFly` | 摄像头飞行动画 | refDurationMs=1200, flyOffset=[18,12,22] |
 | `buildings` | 建筑配置 | 2 栋楼（主楼A/B） |
 | `cranes` | 塔吊配置 | height=60, armLength=35 |
 | `dangerZones` | 危险区域 fallback | 后端不可用时使用；权威来源为 `/api/zones` / `backend/configs/zones.json` |

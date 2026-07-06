@@ -1,5 +1,6 @@
 /**
  * Config.js — 全局配置中心
+ * 本次修改：收紧相机视角边界，补齐渐变天空配置，并移出入口监控位置。
  * 所有颜色、尺寸、动画、场景、WebSocket 参数集中管理
  */
 
@@ -30,6 +31,8 @@ export const CONFIG = {
         fogFar: 500,
         bgColor: 0x0a0e27,
         fogColor: 0x0a0e27,
+        groundSkirt: true,      // 地面裙边（遮挡地平线接缝）
+        groundSkirtSize: 900,
     },
 
     // ====== 相机参数 ======
@@ -40,18 +43,87 @@ export const CONFIG = {
         position:   [140, 110, 140],
         target:     [0, 10, 0],
         damping: 0.05,
-        maxPolar: Math.PI / 2 - 0.02,
+        maxPolar: Math.PI / 2 - 0.28,
+        minDistance: 25,
+        maxDistance: 280,
+        minTargetY: 4,
+        maxTargetY: 45,
+        minHeight: 18,
+        targetBounds: {
+            x: [-130, 130],
+            z: [-130, 130],
+        },
     },
 
     // ====== 渲染参数 ======
     render: {
         shadowMapSize: 4096,
         toneMappingExposure: 1.0,
+        exposureMin: 0.6,
+        exposureMax: 1.5,
         bloom: {
             strength: 0.8,
             radius: 0.6,
             threshold: 0.15,
+            strengthMin: 0.2,
+            strengthMax: 1.0,
+            thresholdDay: 0.6,
         },
+    },
+
+    // ====== 昼夜主题配置 ======
+    theme: {
+        default: 'day',
+        transitionDuration: 1200,   // ms，主题切换过渡时长
+        day: {
+            bgColor: 0x87b5e8,
+            skyTop: 0x5f9fe8,
+            skyBottom: 0xd5e8f6,
+            fogColor: 0xb0c8e0,
+            fogNear: 250,
+            fogFar: 700,
+            ambient: { color: 0xc8d8e8, intensity: 0.7 },
+            hemi: { sky: 0x88bbff, ground: 0x808880, intensity: 0.8 },
+            sun: { color: 0xffffee, intensity: 1.8, position: [120, 200, 60] },
+            exposure: 1.1,
+            bloomStrength: 0.3,
+            bloomThreshold: 0.6,
+        },
+        night: {
+            bgColor: 0x0a0e27,
+            skyTop: 0x07142f,
+            skyBottom: 0x102c5f,
+            fogColor: 0x0a0e27,
+            fogNear: 150,
+            fogFar: 500,
+            ambient: { color: 0x4466aa, intensity: 0.4 },
+            hemi: { sky: 0x88aaff, ground: 0x080820, intensity: 0.6 },
+            sun: { color: 0xfff5e0, intensity: 1.2, position: [100, 200, 80] },
+            exposure: 0.9,
+            bloomStrength: 0.5,
+            bloomThreshold: 0.4,
+        },
+    },
+
+    // ====== 围墙大门配置 ======
+    perimeter: {
+        size: 200,
+        wallHeight: 4,
+        wallThickness: 0.6,
+        wallColor: 0x9a9a9a,
+        gate: {
+            side: 'south',
+            width: 16,
+            height: 5,
+        },
+    },
+
+    // ====== 相机飞行动画参数 ======
+    cameraFly: {
+        refDurationMs: 1200,        // 参考飞行时长
+        arrivalThreshold: 0.5,      // 到达判定阈值
+        lerpRate: 5,                // 插值速率
+        flyOffset: [18, 12, 22],    // 飞行偏移量 [x, y, z]
     },
 
     // ====== 光照参数 ======
@@ -102,7 +174,7 @@ export const CONFIG = {
             id: 1, name: '主监控',
             pos: [-60, 45, 60],
             lookAt: [0, 5, 0],
-            fov: 55, far: 200,
+            fov: 75, far: 250,
             color: 0x00ff88,
             region: '主施工区',
         },
@@ -110,23 +182,23 @@ export const CONFIG = {
             id: 2, name: '堆场监控',
             pos: [-70, 40, 10],
             lookAt: [-30, 5, 40],
-            fov: 55, far: 200,
+            fov: 75, far: 250,
             color: 0x00aaff,
             region: '材料堆放区',
         },
         {
             id: 3, name: '塔吊监控',
             pos: [30, 50, -70],
-            lookAt: [-20, 5, -30],
-            fov: 55, far: 200,
+            lookAt: [-20, 30, -30],
+            fov: 90, far: 300,
             color: 0xffaa00,
             region: '塔吊作业区',
         },
         {
             id: 4, name: '入口监控',
-            pos: [70, 35, 50],
-            lookAt: [20, 5, 20],
-            fov: 55, far: 200,
+            pos: [0, 30, 118],
+            lookAt: [0, 5, 85],
+            fov: 75, far: 250,
             color: 0xff44ff,
             region: '工地入口',
         },

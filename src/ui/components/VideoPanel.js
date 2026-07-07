@@ -1,6 +1,6 @@
 /**
  * VideoPanel.js — 右侧视频与摄像头控制组件
- * 本次修改：从 UIManager.js 拆出视频画面、摄像头按钮、视频源导入/移除逻辑。
+ * 本次修改：为视频区域增加无帧占位层，配合启动自动连接显示清晰状态。
  */
 
 import { CONFIG } from '../../config/Config.js';
@@ -27,6 +27,9 @@ export class VideoPanel {
         const img = document.createElement('img');
         img.id = 'video-img';
         img.alt = '无视频信号';
+        const videoStatus = document.createElement('div');
+        videoStatus.className = 'video-status';
+        videoStatus.textContent = '未连接';
         const videoName = document.createElement('div');
         videoName.className = 'video-name';
         const vNameLeft = document.createElement('span');
@@ -36,6 +39,7 @@ export class VideoPanel {
         videoName.appendChild(vNameLeft);
         videoName.appendChild(vNameRight);
         videoWrap.appendChild(img);
+        videoWrap.appendChild(videoStatus);
         videoWrap.appendChild(videoName);
         videoCard.body.appendChild(videoWrap);
         panel.appendChild(videoCard.root);
@@ -60,7 +64,9 @@ export class VideoPanel {
 
         this.els = {
             root: panel,
+            videoWrap,
             videoImg: img,
+            videoStatus,
             videoName: vNameLeft,
             camButtons: camGrid,
             ...eventEls,
@@ -68,6 +74,11 @@ export class VideoPanel {
         return this.els;
     }
 
+    /**
+     * 同步摄像头按钮选中态。
+     * @param {number|null} cameraId - 摄像头 ID；null 表示取消选中。
+     * @returns {void}
+     */
     setSelectedCamera(cameraId) {
         this.selectedCameraId = cameraId;
         if (!this.els.camButtons) return;

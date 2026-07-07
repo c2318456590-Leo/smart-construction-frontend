@@ -1,6 +1,6 @@
 /**
  * UIManager.js — UI 编排管理器
- * 本次修改：补齐昼夜主题开关转发接口，UIManager 继续只负责组件编排、事件总线与公共状态更新。
+ * 本次修改：补充视频空状态占位与默认摄像头选中同步接口。
  */
 
 import { CONFIG } from '../config/Config.js';
@@ -59,6 +59,15 @@ export class UIManager {
 
     setDemoMode(on, emit = false) {
         this.topBar?.setDemoMode(on, emit);
+    }
+
+    /**
+     * 同步视频面板中的摄像头选中态。
+     * @param {number|null} cameraId - 摄像头 ID；null 表示取消选中
+     * @returns {void}
+     */
+    setSelectedCamera(cameraId) {
+        this.videoPanel?.setSelectedCamera(cameraId);
     }
 
     /**
@@ -127,14 +136,25 @@ export class UIManager {
         this._updateRiskLevel(stats.total || 0);
     }
 
+    /**
+     * 更新视频画面或显示无帧状态。
+     * @param {string} frameData - 视频帧数据，通常为 base64 图片或可访问 URL。
+     * @param {string} cameraName - 视频区域显示的摄像头名称或状态文案。
+     * @returns {void}
+     */
     updateVideoFrame(frameData, cameraName) {
         if (this.els.videoImg) {
             if (frameData) {
                 this.els.videoImg.src = frameData;
+                this.els.videoWrap?.classList.add('has-frame');
             } else {
                 this.els.videoImg.removeAttribute('src');
                 this.els.videoImg.alt = '无视频信号';
+                this.els.videoWrap?.classList.remove('has-frame');
             }
+        }
+        if (this.els.videoStatus) {
+            this.els.videoStatus.textContent = frameData ? '' : (cameraName || '无视频信号');
         }
         if (this.els.videoName && cameraName) {
             this.els.videoName.textContent = cameraName;

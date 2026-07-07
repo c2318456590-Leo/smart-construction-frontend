@@ -1,6 +1,6 @@
 /**
  * styles.js — UI 全局样式注入
- * 本次修改：补齐昼夜主题 Switch 触控尺寸与焦点样式，保持大屏样式统一注入。
+ * 本次修改：补充视频无帧占位样式，避免空图像露出浏览器破图图标。
  */
 
 import { CONFIG } from '../config/Config.js';
@@ -168,6 +168,7 @@ export function injectUIStyles() {
         overflow: hidden;
         border: 1px solid ${c.border};
         margin-bottom: 8px;
+        position: relative;
     }
     #video-img {
         width: 100%;
@@ -175,6 +176,27 @@ export function injectUIStyles() {
         object-fit: cover;
         display: block;
         background: #111;
+    }
+    .video-wrap:not(.has-frame) #video-img {
+        visibility: hidden;
+    }
+    .video-status {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 12px;
+        color: ${c.textSecondary};
+        font-size: 13px;
+        text-align: center;
+        background: #111;
+    }
+    .video-wrap.has-frame .video-status {
+        display: none;
     }
     .video-name {
         font-size: 12px;

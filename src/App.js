@@ -1,6 +1,6 @@
 /**
  * App.js — 企业级数字孪生监控平台主入口
- * 本次修改：合并最新场景链路到源文件，移除版本化模块引用。
+ * 本次修改：页面启动后自动连接主监控视频流，并补充首帧等待与连接失败提示。
  */
 
 import * as THREE from 'three';
@@ -22,6 +22,10 @@ import {
     createGate,
 } from './models/Models.js';
 
+const DEFAULT_STARTUP_CAMERA_ID = 1;
+const STARTUP_VIDEO_TIMEOUT_MS = 8000;
+const CAMERA_SWITCH_CONNECT_DELAY_MS = 500;
+
 class App {
     constructor() {
         this.canvas = document.getElementById('c');
@@ -31,6 +35,9 @@ class App {
         this._animationFrame = null;
         this._resizeHandler = null;
         this._connectTimer = null;
+        this._startupVideoTimer = null;
+        this._startupCameraId = null;
+        this._startupFrameReceived = false;
         this._destroyed = false;
         this._dangerZones = CONFIG.dangerZones;
 
@@ -44,7 +51,7 @@ class App {
             this.ui = new UIManager();
             this.ui.init();
             this.charts = new ChartManager();
-            await this.charts.init();
+            this._initCharts();
 
             // 2. 初始化 3D 场景
             this.sceneMgr = new SceneManager(this.canvas);
@@ -77,6 +84,9 @@ class App {
 
             // 8. 启动定时器
             this._startTimers();
+
+            // 9. 默认连接主监控，让页面打开后直接显示视频画面
+            this._connectDefaultCamera();
 
             console.log('[App] 数字孪生监控平台初始化完成');
         } catch (err) {
@@ -124,16 +134,37 @@ class App {
         this.scene.add(gate);
     }
 
+    /** 后台初始化图表，避免 CDN 加载影响主场景与视频启动。 */
+    _initCharts() {
+        this.charts.init().catch((err) => {
+            console.warn('[App] 图表初始化失败，主监控功能继续运行:', err);
+        });
+    }
+
     /** 绑定 WebSocket 事件 */
     _bindWS() {
         this.ws.on('open', () => {
             this.ui.updateConnectionStatus(true);
             this.ui.updateAIStatus(true);
+            if (this._isWaitingForStartupFrame()) {
+                this.ui.updateVideoFrame('', this._getCameraDisplayName(this._startupCameraId, '连接中'));
+            }
         });
 
         this.ws.on('close', () => {
             this.ui.updateConnectionStatus(false);
             this.ui.updateAIStatus(false);
+            if (this._isWaitingForStartupFrame()) {
+                this._clearStartupVideoTimer();
+                this.ui.updateVideoFrame('', this._getCameraDisplayName(this._startupCameraId, '后端未连接'));
+            }
+        });
+
+        this.ws.on('error', () => {
+            if (this._isWaitingForStartupFrame()) {
+                this._clearStartupVideoTimer();
+                this.ui.updateVideoFrame('', this._getCameraDisplayName(this._startupCameraId, '视频连接失败'));
+            }
         });
 
         // 报警事件
@@ -166,6 +197,7 @@ class App {
 
         // 视频帧
         this.ws.on('video_frame', (data) => {
+            this._markStartupVideoReady(data.camera_id);
             const cam = this.cameraMgr.cameras.get(data.camera_id);
             const camName = cam ? cam.config.name : `Cam ${data.camera_id}`;
             this.ui.updateVideoFrame(data.frame, camName);
@@ -183,19 +215,21 @@ class App {
             }
         });
 
-        // 连接（默认不自动连接，等用户选择摄像头或开启演示模式）
-        // this.ws.connect(1);  // 注释掉：无视频源时不应疯狂重连
+        // 启动连接由 _connectDefaultCamera 统一处理。
     }
 
     /** 绑定 UI 事件 */
     _bindUI() {
         this.ui.on('selectCamera', (camId) => {
+            this._resetStartupVideoWait();
+            if (this._connectTimer) {
+                clearTimeout(this._connectTimer);
+                this._connectTimer = null;
+            }
             // camId 为 null 表示用户取消选中：恢复初始视角 + 断开 WS
             if (camId === null) {
                 this.cameraMgr.restoreView();  // 飞回默认视角
-                if (this.ws.connected) {
-                    this.ws.disconnect();
-                }
+                this.ws.disconnect();
                 this.ui.updateVideoFrame('', '未连接');
                 this.ui.updateConnectionStatus(false);
                 this.ui.updateAIStatus(false);
@@ -214,7 +248,7 @@ class App {
                 this._connectTimer = setTimeout(() => {
                     this._connectTimer = null;
                     if (!this._destroyed) this.ws.connect(camId);
-                }, 500);
+                }, CAMERA_SWITCH_CONNECT_DELAY_MS);
             } else {
                 this.ws.connect(camId);
             }
@@ -236,20 +270,106 @@ class App {
     }
 
     /**
+     * 默认连接主监控视频流，确保页面打开后视频区有实时画面或清晰状态。
+     * @private
+     * @returns {void}
+     */
+    _connectDefaultCamera() {
+        const camId = DEFAULT_STARTUP_CAMERA_ID;
+        if (this._destroyed || this.ws.connected || !this.cameraMgr.cameras.has(camId)) return;
+
+        this._resetStartupVideoWait();
+        this._startupCameraId = camId;
+        this._startupFrameReceived = false;
+
+        this.ui.setSelectedCamera(camId);
+        this.cameraMgr.selectCamera(camId);
+        this.ui.updateVideoFrame('', this._getCameraDisplayName(camId, '连接中'));
+        this.ui.updateConnectionStatus(false);
+        this.ui.updateAIStatus(false);
+        this.ws.connect(camId);
+
+        const timer = setTimeout(() => {
+            this._startupVideoTimer = null;
+            if (this._isWaitingForStartupFrame() && !this._destroyed) {
+                this.ui.updateVideoFrame('', this._getCameraDisplayName(camId, '视频连接超时'));
+            }
+        }, STARTUP_VIDEO_TIMEOUT_MS);
+        this._startupVideoTimer = timer;
+    }
+
+    /**
+     * 首帧到达后清理默认启动视频的等待定时器。
+     * @private
+     * @param {number} cameraId - 收到视频帧的摄像头 ID。
+     * @returns {void}
+     */
+    _markStartupVideoReady(cameraId) {
+        if (cameraId !== this._startupCameraId) return;
+
+        this._startupFrameReceived = true;
+        this._clearStartupVideoTimer();
+    }
+
+    /**
+     * 清理启动首帧等待状态与对应超时定时器。
+     * @private
+     * @returns {void}
+     */
+    _resetStartupVideoWait() {
+        this._clearStartupVideoTimer();
+        this._startupCameraId = null;
+        this._startupFrameReceived = false;
+    }
+
+    /**
+     * 判断默认视频是否仍在等待首帧。
+     * @private
+     * @returns {boolean} true 表示尚未收到默认摄像头首帧。
+     */
+    _isWaitingForStartupFrame() {
+        return this._startupCameraId !== null && !this._startupFrameReceived;
+    }
+
+    /**
+     * 仅清理启动视频超时定时器，保留首帧等待状态给自动重连使用。
+     * @private
+     * @returns {void}
+     */
+    _clearStartupVideoTimer() {
+        if (!this._startupVideoTimer) return;
+
+        clearTimeout(this._startupVideoTimer);
+        this._startupVideoTimer = null;
+    }
+
+    /**
+     * 生成视频区域显示的摄像头状态文案。
+     * @private
+     * @param {number} cameraId - 摄像头 ID。
+     * @param {string} stateText - 当前视频连接状态。
+     * @returns {string} 摄像头名称与状态组合后的展示文案。
+     */
+    _getCameraDisplayName(cameraId, stateText) {
+        const cam = this.cameraMgr?.cameras?.get(cameraId);
+        const camName = cam ? cam.config.name : `Cam ${cameraId}`;
+        return `${camName} · ${stateText}`;
+    }
+
+    /**
      * 启动演示模式：断开 WS，用模拟信号驱动场景
      * - 模拟工人移动（多工人）
      * - 适度报警（每 6~10 秒一次，循环不断）
      * - 模拟视频帧（占位画面）
      */
     _startDemo() {
+        this._resetStartupVideoWait();
         if (this._demoTimer) {
             clearInterval(this._demoTimer);
             this._timers.delete(this._demoTimer);
         }
-        // 若 WS 已连接，先断开（演示模式不连真实后端）
-        if (this.ws.connected) {
-            this.ws.disconnect();
-        }
+        // 进入演示模式前主动断开 WS（演示模式不连真实后端）
+        this.ws.disconnect();
         this.ui.updateConnectionStatus(false);
         this.ui.updateAIStatus(true);   // 演示模式下 AI 标记为运行
         this.ui.updateVideoFrame('', '演示模式 · 模拟信号');
@@ -432,6 +552,7 @@ class App {
             clearTimeout(this._connectTimer);
             this._connectTimer = null;
         }
+        this._resetStartupVideoWait();
         this._timers.forEach((timer) => clearInterval(timer));
         this._timers.clear();
         this.ws?.disconnect();

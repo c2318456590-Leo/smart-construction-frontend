@@ -59,3 +59,4 @@ data/SHEL5K-数据集.zip
 data/VOC2028.zip
 # 缓存文件
 .cache/
+deeplearn/merged_dataset/

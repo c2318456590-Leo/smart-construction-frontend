@@ -60,3 +60,4 @@ data/VOC2028.zip
 # 缓存文件
 .cache/
 deeplearn/merged_dataset/
+deeplearn/merged_dataset_seg/
